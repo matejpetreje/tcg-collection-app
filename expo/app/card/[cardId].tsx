@@ -8,6 +8,7 @@ import { Heart, HeartOff, Layers, Tag, ChevronDown, ChevronUp, Droplets, Droplet
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { getCardFoundation } from '@/constants/tcg-card-foundations';
+import { getTCGPresentation } from '@/tcg/presentation';
 import { useDatabase } from '@/providers/DatabaseProvider';
 import { useTCG } from '@/providers/TCGProvider';
 import { safeQueryFirst, safeQuery, safeRun } from '@/utils/database';
@@ -24,7 +25,8 @@ export default function CardDetailScreen() {
   const router = useRouter();
   const { db } = useDatabase();
   const { tcg } = useTCG();
-  const isOnePiece = tcg === 'onepiece';
+  const isLorcana = tcg === 'lorcana';
+  const presentation = tcg ? getTCGPresentation(tcg) : null;
   const [showNote, setShowNote] = useState<boolean>(false);
   const [noteText, setNoteText] = useState<string>('');
   const [showDeckPicker, setShowDeckPicker] = useState<boolean>(false);
@@ -111,7 +113,7 @@ export default function CardDetailScreen() {
     enabled: !!db && cardIdNum > 0,
   });
 
-  const showCardmarket = hasCardmarketCredentials();
+  const showCardmarket = presentation?.showCardmarket === true && hasCardmarketCredentials();
 
   const { data: cmPrices, isLoading: cmLoading } = useQuery({
     queryKey: ['cardmarket-price', cardIdNum, card?.name],
@@ -130,7 +132,7 @@ export default function CardDetailScreen() {
       if (!db || !card) return null;
       return fetchAndCacheDotggPrice(db, cardIdNum, card.set_name, card.card_number, tcg);
     },
-    enabled: !!db && !!card,
+    enabled: !!db && !!card && presentation?.showDotgg === true,
     staleTime: 24 * 60 * 60 * 1000,
     retry: 1,
   });
@@ -265,7 +267,17 @@ export default function CardDetailScreen() {
       </View>
 
       <View style={styles.metaRow}>
-        {card.ink_color && <InkBadge inkColor={card.ink_color} size="medium" />}
+        {card.ink_color && (
+          isLorcana || tcg === 'onepiece' ? (
+            <InkBadge inkColor={card.ink_color} size="medium" />
+          ) : (
+            <View style={styles.genericMetaBadge}>
+              <Text style={styles.genericMetaBadgeText}>
+                {presentation?.colorLabel ? `${presentation.colorLabel}: ` : ''}{card.ink_color}
+              </Text>
+            </View>
+          )
+        )}
         {card.cost !== null && (
           <View style={styles.costCircle}>
             <Text style={styles.costCircleText}>{card.cost}</Text>
@@ -289,8 +301,8 @@ export default function CardDetailScreen() {
         {tcg === 'lorcana' ? (
           <>
             {card.cost != null && <View style={styles.statItem}><Text style={[styles.statValue, { color: Colors.primary }]}>{card.cost}</Text><Text style={styles.statLabel}>COST</Text></View>}
-            {card.strength != null && card.strength !== 0 && <View style={styles.statItem}><Text style={styles.statValue}>{card.strength}</Text><Text style={styles.statLabel}>ATK</Text></View>}
-            {card.willpower != null && card.willpower !== 0 && <View style={styles.statItem}><Text style={styles.statValue}>{card.willpower}</Text><Text style={styles.statLabel}>HP</Text></View>}
+            {card.strength != null && card.strength !== 0 && <View style={styles.statItem}><Text style={styles.statValue}>{card.strength}</Text><Text style={styles.statLabel}>STR</Text></View>}
+            {card.willpower != null && card.willpower !== 0 && <View style={styles.statItem}><Text style={styles.statValue}>{card.willpower}</Text><Text style={styles.statLabel}>WIL</Text></View>}
             {card.lore != null && <View style={styles.statItem}><Text style={[styles.statValue, { color: Colors.accent }]}>{card.lore}</Text><Text style={styles.statLabel}>LORE</Text></View>}
           </>
         ) : gameStats.map(stat => (
@@ -301,7 +313,7 @@ export default function CardDetailScreen() {
         ))}
       </View>
 
-      {!isOnePiece && (
+      {presentation?.showInkability && (
       <View style={styles.inkableRow}>
         {card.inkable === 1 ? (
           <>
@@ -378,75 +390,59 @@ export default function CardDetailScreen() {
 
       <View style={styles.collectionSection}>
         <Text style={styles.sectionTitle}>Collection</Text>
-        <View style={styles.qtyRow}>
-          <QuantityControl
-            label="Classic"
-            value={card.qty}
-            onIncrement={() => updateQty.mutate({ field: 'qty', delta: 1 })}
-            onDecrement={() => updateQty.mutate({ field: 'qty', delta: -1 })}
-            color={Colors.accent}
-          />
-          <QuantityControl
-            label="Foil"
-            value={card.qty_foil}
-            onIncrement={() => updateQty.mutate({ field: 'qty_foil', delta: 1 })}
-            onDecrement={() => updateQty.mutate({ field: 'qty_foil', delta: -1 })}
-            color={Colors.primaryLight}
-          />
-        </View>
-
-        <TouchableOpacity
-          style={styles.moreToggle}
-          onPress={() => setShowMoreTypes(!showMoreTypes)}
-        >
-          <MoreHorizontal size={16} color={Colors.textSecondary} />
-          <Text style={styles.moreToggleText}>More variants</Text>
-          {showMoreTypes ? <ChevronUp size={14} color={Colors.textMuted} /> : <ChevronDown size={14} color={Colors.textMuted} />}
-        </TouchableOpacity>
-
-        {showMoreTypes && (
-          <View style={styles.moreTypesGrid}>
+        {isLorcana ? (
+          <>
             <View style={styles.qtyRow}>
               <QuantityControl
-                label="Epic"
-                value={card.qty_epic}
-                onIncrement={() => updateQty.mutate({ field: 'qty_epic', delta: 1 })}
-                onDecrement={() => updateQty.mutate({ field: 'qty_epic', delta: -1 })}
-                color={Colors.rarity.Epic ?? '#FF6B35'}
-              />
-              <QuantityControl
-                label="Enchanted"
-                value={card.qty_enchanted}
-                onIncrement={() => updateQty.mutate({ field: 'qty_enchanted', delta: 1 })}
-                onDecrement={() => updateQty.mutate({ field: 'qty_enchanted', delta: -1 })}
-                color={Colors.dangerLight}
-              />
-            </View>
-            <View style={styles.qtyRow}>
-              <QuantityControl
-                label="Promo"
-                value={card.qty_promo}
-                onIncrement={() => updateQty.mutate({ field: 'qty_promo', delta: 1 })}
-                onDecrement={() => updateQty.mutate({ field: 'qty_promo', delta: -1 })}
-                color={Colors.rarity.Promo ?? '#1ABC9C'}
-              />
-              <QuantityControl
-                label="Iconic"
-                value={card.qty_iconic}
-                onIncrement={() => updateQty.mutate({ field: 'qty_iconic', delta: 1 })}
-                onDecrement={() => updateQty.mutate({ field: 'qty_iconic', delta: -1 })}
-                color={Colors.rarity.Iconic ?? '#FFD700'}
-              />
-            </View>
-            <View style={styles.qtyRowCenter}>
-              <QuantityControl
-                label="Play"
-                value={card.qty_play}
-                onIncrement={() => updateQty.mutate({ field: 'qty_play', delta: 1 })}
-                onDecrement={() => updateQty.mutate({ field: 'qty_play', delta: -1 })}
+                label="Classic"
+                value={card.qty}
+                onIncrement={() => updateQty.mutate({ field: 'qty', delta: 1 })}
+                onDecrement={() => updateQty.mutate({ field: 'qty', delta: -1 })}
                 color={Colors.accent}
               />
+              <QuantityControl
+                label="Foil"
+                value={card.qty_foil}
+                onIncrement={() => updateQty.mutate({ field: 'qty_foil', delta: 1 })}
+                onDecrement={() => updateQty.mutate({ field: 'qty_foil', delta: -1 })}
+                color={Colors.primaryLight}
+              />
             </View>
+
+            <TouchableOpacity
+              style={styles.moreToggle}
+              onPress={() => setShowMoreTypes(!showMoreTypes)}
+            >
+              <MoreHorizontal size={16} color={Colors.textSecondary} />
+              <Text style={styles.moreToggleText}>More Lorcana variants</Text>
+              {showMoreTypes ? <ChevronUp size={14} color={Colors.textMuted} /> : <ChevronDown size={14} color={Colors.textMuted} />}
+            </TouchableOpacity>
+
+            {showMoreTypes && (
+              <View style={styles.moreTypesGrid}>
+                <View style={styles.qtyRow}>
+                  <QuantityControl label="Epic" value={card.qty_epic} onIncrement={() => updateQty.mutate({ field: 'qty_epic', delta: 1 })} onDecrement={() => updateQty.mutate({ field: 'qty_epic', delta: -1 })} color={Colors.rarity.Epic ?? '#FF6B35'} />
+                  <QuantityControl label="Enchanted" value={card.qty_enchanted} onIncrement={() => updateQty.mutate({ field: 'qty_enchanted', delta: 1 })} onDecrement={() => updateQty.mutate({ field: 'qty_enchanted', delta: -1 })} color={Colors.dangerLight} />
+                </View>
+                <View style={styles.qtyRow}>
+                  <QuantityControl label="Promo" value={card.qty_promo} onIncrement={() => updateQty.mutate({ field: 'qty_promo', delta: 1 })} onDecrement={() => updateQty.mutate({ field: 'qty_promo', delta: -1 })} color={Colors.rarity.Promo ?? '#1ABC9C'} />
+                  <QuantityControl label="Iconic" value={card.qty_iconic} onIncrement={() => updateQty.mutate({ field: 'qty_iconic', delta: 1 })} onDecrement={() => updateQty.mutate({ field: 'qty_iconic', delta: -1 })} color={Colors.rarity.Iconic ?? '#FFD700'} />
+                </View>
+                <View style={styles.qtyRowCenter}>
+                  <QuantityControl label="Play" value={card.qty_play} onIncrement={() => updateQty.mutate({ field: 'qty_play', delta: 1 })} onDecrement={() => updateQty.mutate({ field: 'qty_play', delta: -1 })} color={Colors.accent} />
+                </View>
+              </View>
+            )}
+          </>
+        ) : (
+          <View style={styles.qtyRowCenter}>
+            <QuantityControl
+              label="Owned"
+              value={card.qty}
+              onIncrement={() => updateQty.mutate({ field: 'qty', delta: 1 })}
+              onDecrement={() => updateQty.mutate({ field: 'qty', delta: -1 })}
+              color={Colors.primary}
+            />
           </View>
         )}
       </View>
@@ -582,81 +578,83 @@ export default function CardDetailScreen() {
         </View>
       )}
 
-      <View style={styles.dgSection}>
-        <View style={styles.dgHeader}>
-          <View style={styles.dgTitleRow}>
-            <DollarSign size={16} color={Colors.accent} />
-            <Text style={styles.dgTitle}>Market Prices</Text>
+      {presentation?.showDotgg && (
+        <View style={styles.dgSection}>
+          <View style={styles.dgHeader}>
+            <View style={styles.dgTitleRow}>
+              <DollarSign size={16} color={Colors.accent} />
+              <Text style={styles.dgTitle}>Market Prices</Text>
+            </View>
+            {dotggLoading && <ActivityIndicator size="small" color={Colors.accent} />}
+            {dotggPrices?.priceDate && (
+              <Text style={styles.dgDateText}>{dotggPrices.priceDate}</Text>
+            )}
           </View>
-          {dotggLoading && <ActivityIndicator size="small" color={Colors.accent} />}
-          {dotggPrices?.priceDate && (
-            <Text style={styles.dgDateText}>{dotggPrices.priceDate}</Text>
-          )}
+          {dotggPrices ? (
+            <>
+              {(dotggPrices.normalPrice != null || dotggPrices.foilPrice != null || dotggPrices.coldFoilPrice != null) && (
+                <View style={styles.dgMarketBlock}>
+                  <Text style={styles.dgMarketLabel}>TCGPlayer</Text>
+                  <View style={styles.dgPriceGrid}>
+                    {dotggPrices.normalPrice != null && (
+                      <View style={styles.dgPriceItem}>
+                        <Text style={styles.dgPriceType}>Normal</Text>
+                        <Text style={styles.dgPriceValue}>${dotggPrices.normalPrice.toFixed(2)}</Text>
+                      </View>
+                    )}
+                    {dotggPrices.foilPrice != null && (
+                      <View style={styles.dgPriceItem}>
+                        <View style={styles.dgFoilRow}>
+                          <Sparkles size={10} color={Colors.primaryLight} />
+                          <Text style={styles.dgPriceType}>Foil</Text>
+                        </View>
+                        <Text style={styles.dgPriceValue}>${dotggPrices.foilPrice.toFixed(2)}</Text>
+                      </View>
+                    )}
+                    {dotggPrices.coldFoilPrice != null && (
+                      <View style={styles.dgPriceItem}>
+                        <View style={styles.dgFoilRow}>
+                          <Sparkles size={10} color={Colors.accentLight} />
+                          <Text style={styles.dgPriceType}>Cold Foil</Text>
+                        </View>
+                        <Text style={styles.dgPriceValue}>${dotggPrices.coldFoilPrice.toFixed(2)}</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              )}
+              {(dotggPrices.cmNormalPrice != null || dotggPrices.cmFoilPrice != null) && (
+                <View style={styles.dgMarketBlock}>
+                  <Text style={styles.dgMarketLabel}>Cardmarket</Text>
+                  <View style={styles.dgPriceGrid}>
+                    {dotggPrices.cmNormalPrice != null && (
+                      <View style={styles.dgPriceItem}>
+                        <Text style={styles.dgPriceType}>Normal</Text>
+                        <Text style={styles.dgPriceValue}>€{dotggPrices.cmNormalPrice.toFixed(2)}</Text>
+                      </View>
+                    )}
+                    {dotggPrices.cmFoilPrice != null && (
+                      <View style={styles.dgPriceItem}>
+                        <View style={styles.dgFoilRow}>
+                          <Sparkles size={10} color={Colors.primaryLight} />
+                          <Text style={styles.dgPriceType}>Foil</Text>
+                        </View>
+                        <Text style={styles.dgPriceValue}>€{dotggPrices.cmFoilPrice.toFixed(2)}</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              )}
+              {dotggPrices.normalPrice == null && dotggPrices.foilPrice == null && dotggPrices.coldFoilPrice == null && dotggPrices.cmNormalPrice == null && dotggPrices.cmFoilPrice == null && (
+                <Text style={styles.dgNoData}>No price data available</Text>
+              )}
+              <Text style={styles.dgSourceText}>Data from DotGG</Text>
+            </>
+          ) : !dotggLoading ? (
+            <Text style={styles.dgNoData}>Price data not available for this card</Text>
+          ) : null}
         </View>
-        {dotggPrices ? (
-          <>
-            {(dotggPrices.normalPrice != null || dotggPrices.foilPrice != null || dotggPrices.coldFoilPrice != null) && (
-              <View style={styles.dgMarketBlock}>
-                <Text style={styles.dgMarketLabel}>TCGPlayer</Text>
-                <View style={styles.dgPriceGrid}>
-                  {dotggPrices.normalPrice != null && (
-                    <View style={styles.dgPriceItem}>
-                      <Text style={styles.dgPriceType}>Normal</Text>
-                      <Text style={styles.dgPriceValue}>${dotggPrices.normalPrice.toFixed(2)}</Text>
-                    </View>
-                  )}
-                  {dotggPrices.foilPrice != null && (
-                    <View style={styles.dgPriceItem}>
-                      <View style={styles.dgFoilRow}>
-                        <Sparkles size={10} color={Colors.primaryLight} />
-                        <Text style={styles.dgPriceType}>Foil</Text>
-                      </View>
-                      <Text style={styles.dgPriceValue}>${dotggPrices.foilPrice.toFixed(2)}</Text>
-                    </View>
-                  )}
-                  {dotggPrices.coldFoilPrice != null && (
-                    <View style={styles.dgPriceItem}>
-                      <View style={styles.dgFoilRow}>
-                        <Sparkles size={10} color={Colors.accentLight} />
-                        <Text style={styles.dgPriceType}>Cold Foil</Text>
-                      </View>
-                      <Text style={styles.dgPriceValue}>${dotggPrices.coldFoilPrice.toFixed(2)}</Text>
-                    </View>
-                  )}
-                </View>
-              </View>
-            )}
-            {(dotggPrices.cmNormalPrice != null || dotggPrices.cmFoilPrice != null) && (
-              <View style={styles.dgMarketBlock}>
-                <Text style={styles.dgMarketLabel}>Cardmarket</Text>
-                <View style={styles.dgPriceGrid}>
-                  {dotggPrices.cmNormalPrice != null && (
-                    <View style={styles.dgPriceItem}>
-                      <Text style={styles.dgPriceType}>Normal</Text>
-                      <Text style={styles.dgPriceValue}>€{dotggPrices.cmNormalPrice.toFixed(2)}</Text>
-                    </View>
-                  )}
-                  {dotggPrices.cmFoilPrice != null && (
-                    <View style={styles.dgPriceItem}>
-                      <View style={styles.dgFoilRow}>
-                        <Sparkles size={10} color={Colors.primaryLight} />
-                        <Text style={styles.dgPriceType}>Foil</Text>
-                      </View>
-                      <Text style={styles.dgPriceValue}>€{dotggPrices.cmFoilPrice.toFixed(2)}</Text>
-                    </View>
-                  )}
-                </View>
-              </View>
-            )}
-            {dotggPrices.normalPrice == null && dotggPrices.foilPrice == null && dotggPrices.coldFoilPrice == null && dotggPrices.cmNormalPrice == null && dotggPrices.cmFoilPrice == null && (
-              <Text style={styles.dgNoData}>No price data available</Text>
-            )}
-            <Text style={styles.dgSourceText}>Data from DotGG</Text>
-          </>
-        ) : !dotggLoading ? (
-          <Text style={styles.dgNoData}>Price data not available for this card</Text>
-        ) : null}
-      </View>
+      )}
 
       <View style={{ height: 40 }} />
     </ScrollView>
@@ -747,6 +745,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     gap: 24,
+  },
+  genericMetaBadge: {
+    backgroundColor: Colors.surfaceLight,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+  genericMetaBadgeText: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '600' as const,
   },
   inkableRow: {
     flexDirection: 'row',
