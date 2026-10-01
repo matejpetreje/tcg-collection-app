@@ -45,7 +45,7 @@ const DEFAULT_SECTION_ORDER: SectionId[] = [
   'top_value', 'game_stats', 'ink_dist', 'rarity_dist', 'decks', 'purchased_decks', 'type_dist', 'set_progress',
 ];
 
-const SECTION_ORDER_KEY = 'dashboard_section_order';
+const SECTION_ORDER_KEY = (tcg: TCGId) => `dashboard_section_order_${tcg}`;
 
 interface RarityDistItem {
   rarity: string;
@@ -128,32 +128,39 @@ export default function DashboardScreen() {
   const [reorderMode, setReorderMode] = useState<boolean>(false);
 
   useEffect(() => {
-    void AsyncStorage.getItem(SECTION_ORDER_KEY).then(stored => {
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored) as SectionId[];
-          if (Array.isArray(parsed) && parsed.length === DEFAULT_SECTION_ORDER.length) {
-            setSectionOrder(parsed);
-          }
-        } catch {
-          console.log('[Dashboard] Failed to parse stored section order');
+    if (!currentTCG) {
+      setSectionOrder(DEFAULT_SECTION_ORDER);
+      return;
+    }
+
+    setSectionOrder(DEFAULT_SECTION_ORDER);
+    void AsyncStorage.getItem(SECTION_ORDER_KEY(currentTCG)).then(stored => {
+      if (!stored) return;
+      try {
+        const parsed = JSON.parse(stored) as SectionId[];
+        if (Array.isArray(parsed) && parsed.length === DEFAULT_SECTION_ORDER.length) {
+          setSectionOrder(parsed);
         }
+      } catch {
+        console.log('[Dashboard] Failed to parse stored section order');
       }
     });
-  }, []);
+  }, [currentTCG]);
 
   const moveSection = useCallback((fromIdx: number, toIdx: number) => {
     setSectionOrder(prev => {
       const newOrder = [...prev];
       const [moved] = newOrder.splice(fromIdx, 1);
       newOrder.splice(toIdx, 0, moved);
-      void AsyncStorage.setItem(SECTION_ORDER_KEY, JSON.stringify(newOrder));
+      if (currentTCG) {
+        void AsyncStorage.setItem(SECTION_ORDER_KEY(currentTCG), JSON.stringify(newOrder));
+      }
       return newOrder;
     });
     if (Platform.OS !== 'web') {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
-  }, []);
+  }, [currentTCG]);
 
   const { data: stats } = useQuery({
     queryKey: ['dashboard-stats', currentTCG, !!db, hasCatalog],
@@ -171,20 +178,22 @@ export default function DashboardScreen() {
       const deckCount = await safeQueryFirst<{ count: number }>(db, 'SELECT COUNT(*) as count FROM decks');
 
       let gameStats = { total: 0, wins: 0, losses: 0, winRate: 0 };
-      try {
-        const totalGames = await safeQueryFirst<{ count: number }>(db, 'SELECT COUNT(*) as count FROM game_history');
-        const wins = await safeQueryFirst<{ count: number }>(db, "SELECT COUNT(*) as count FROM game_history WHERE result = 'win'");
-        const losses = await safeQueryFirst<{ count: number }>(db, "SELECT COUNT(*) as count FROM game_history WHERE result = 'loss'");
-        const total = totalGames?.count ?? 0;
-        const w = wins?.count ?? 0;
-        gameStats = {
-          total,
-          wins: w,
-          losses: losses?.count ?? 0,
-          winRate: total > 0 ? Math.round((w / total) * 100) : 0,
-        };
-      } catch {
-        console.log('[Dashboard] game_history table not ready yet');
+      if (isLorcana) {
+        try {
+          const totalGames = await safeQueryFirst<{ count: number }>(db, 'SELECT COUNT(*) as count FROM game_history');
+          const wins = await safeQueryFirst<{ count: number }>(db, "SELECT COUNT(*) as count FROM game_history WHERE result = 'win'");
+          const losses = await safeQueryFirst<{ count: number }>(db, "SELECT COUNT(*) as count FROM game_history WHERE result = 'loss'");
+          const total = totalGames?.count ?? 0;
+          const w = wins?.count ?? 0;
+          gameStats = {
+            total,
+            wins: w,
+            losses: losses?.count ?? 0,
+            winRate: total > 0 ? Math.round((w / total) * 100) : 0,
+          };
+        } catch {
+          console.log('[Dashboard] Lorcana game_history table not ready yet');
+        }
       }
 
       return {
