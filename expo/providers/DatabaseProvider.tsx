@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import * as SQLite from 'expo-sqlite';
 import createContextHook from '@nkzw/create-context-hook';
 import { useQueryClient } from '@tanstack/react-query';
-import { getDatabase, initializeTables, checkCatalogExists, getCardCount, syncCardsFromApi } from '@/utils/database';
+import { getDatabase, closeDatabase, initializeTables, checkCatalogExists, getCardCount, syncCardsFromApi } from '@/utils/database';
 import { useTCG } from '@/providers/TCGProvider';
 import type { TCGId } from '@/constants/tcgs';
 
@@ -29,6 +29,7 @@ export const [DatabaseProvider, useDatabase] = createContextHook((): DatabaseSta
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null);
   const [lastSync, setLastSync] = useState<string | null>(null);
+  const activeTcgRef = useRef<TCGId | null>(null);
 
   useEffect(() => {
     if (!tcgReady) return;
@@ -40,6 +41,9 @@ export const [DatabaseProvider, useDatabase] = createContextHook((): DatabaseSta
       return;
     }
     let mounted = true;
+    const previousTcg = activeTcgRef.current;
+    activeTcgRef.current = tcg;
+
     // Never expose the previous game's database/catalog while the selected TCG is changing.
     setIsReady(false);
     setDb(null);
@@ -49,6 +53,14 @@ export const [DatabaseProvider, useDatabase] = createContextHook((): DatabaseSta
     void queryClient.invalidateQueries();
     (async () => {
       try {
+        // expo-sqlite web uses an exclusive OPFS access handle. Release the
+        // previous game's handle before opening the next database so a later
+        // web reload cannot collide with stale handles.
+        if (previousTcg && previousTcg !== tcg) {
+          await queryClient.cancelQueries();
+          await closeDatabase(previousTcg);
+        }
+
         console.log(`[Provider] Initializing database for TCG=${tcg}...`);
         const database = await getDatabase(tcg);
         if (!mounted) return;
