@@ -35,7 +35,7 @@ export default function CardDetailScreen() {
   const cardIdNum = parseInt(cardId ?? '0', 10);
 
   const { data: card, isLoading } = useQuery({
-    queryKey: ['card-detail', cardIdNum, !!db],
+    queryKey: ['card-detail', tcg, cardIdNum, !!db],
     queryFn: async () => {
       if (!db) return null;
       return safeQueryFirst<CardWithDetails>(
@@ -61,7 +61,7 @@ export default function CardDetailScreen() {
   });
 
   const { data: abilities } = useQuery({
-    queryKey: ['card-abilities', cardIdNum, !!db],
+    queryKey: ['card-abilities', tcg, cardIdNum, !!db],
     queryFn: async () => {
       if (!db) return [];
       return safeQuery<CardAbility>(db, 'SELECT * FROM abilities WHERE card_id = ?', [cardIdNum]);
@@ -70,7 +70,7 @@ export default function CardDetailScreen() {
   });
 
   const { data: subtypes } = useQuery({
-    queryKey: ['card-subtypes', cardIdNum, !!db],
+    queryKey: ['card-subtypes', tcg, cardIdNum, !!db],
     queryFn: async () => {
       if (!db) return [];
       return safeQuery<CardSubtype>(db, 'SELECT * FROM subtypes WHERE card_id = ?', [cardIdNum]);
@@ -105,7 +105,7 @@ export default function CardDetailScreen() {
   });
 
   const { data: wishlistItem } = useQuery({
-    queryKey: ['wishlist-item', cardIdNum, !!db],
+    queryKey: ['wishlist-item', tcg, cardIdNum, !!db],
     queryFn: async () => {
       if (!db) return null;
       return safeQueryFirst<WishlistItem>(db, 'SELECT * FROM wishlist WHERE card_id = ?', [cardIdNum]);
@@ -116,7 +116,7 @@ export default function CardDetailScreen() {
   const showCardmarket = presentation?.showCardmarket === true && hasCardmarketCredentials();
 
   const { data: cmPrices, isLoading: cmLoading } = useQuery({
-    queryKey: ['cardmarket-price', cardIdNum, card?.name],
+    queryKey: ['cardmarket-price', tcg, cardIdNum, card?.name],
     queryFn: async (): Promise<CardmarketPriceData | null> => {
       if (!db || !card) return null;
       return fetchAndCacheCardmarketPrice(db, cardIdNum, card.name, card.set_name);
@@ -138,7 +138,7 @@ export default function CardDetailScreen() {
   });
 
   const { data: decks } = useQuery({
-    queryKey: ['decks-list', !!db],
+    queryKey: ['decks-list', tcg, !!db],
     queryFn: async () => {
       if (!db) return [];
       return safeQuery<Deck>(db, 'SELECT * FROM decks ORDER BY name');
@@ -147,13 +147,13 @@ export default function CardDetailScreen() {
   });
 
   const invalidateAll = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ['card-detail', cardIdNum] });
+    void queryClient.invalidateQueries({ queryKey: ['card-detail', tcg, cardIdNum] });
     void queryClient.invalidateQueries({ queryKey: ['collection'] });
     void queryClient.invalidateQueries({ queryKey: ['collection-count'] });
     void queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
     void queryClient.invalidateQueries({ queryKey: ['dashboard-ink-stats'] });
     void queryClient.invalidateQueries({ queryKey: ['dashboard-set-progress'] });
-  }, [queryClient, cardIdNum]);
+  }, [queryClient, cardIdNum, tcg]);
 
   type QtyField = 'qty' | 'qty_foil' | 'qty_enchanted' | 'qty_epic' | 'qty_promo' | 'qty_iconic' | 'qty_play';
   const updateQty = useMutation({
@@ -186,7 +186,7 @@ export default function CardDetailScreen() {
     },
     onSuccess: () => {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      void queryClient.invalidateQueries({ queryKey: ['wishlist-item', cardIdNum] });
+      void queryClient.invalidateQueries({ queryKey: ['wishlist-item', tcg, cardIdNum] });
       void queryClient.invalidateQueries({ queryKey: ['wishlist'] });
     },
   });
