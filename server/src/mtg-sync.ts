@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parser } from 'stream-json';
 import { streamArray } from 'stream-json/streamers/StreamArray.js';
-import { db, getMeta, setMeta } from './db.js';
+import { db, getMeta, setMeta, withTransaction } from './db.js';
 import { config } from './config.js';
 import { downloadBulkFile, getDefaultCardsBulkMeta } from './scryfall.js';
 
@@ -90,7 +90,7 @@ async function importBulk(filePath: string, updatedAt: string): Promise<number> 
   let count = 0;
   let batch: ScryfallCard[] = [];
 
-  const flush = db.transaction((cards: ScryfallCard[]) => {
+  const flush = (cards: ScryfallCard[]) => withTransaction(() => {
     for (const card of cards) {
       if (!card || card.digital || !card.oracle_id || !card.set || !card.id) continue;
 
