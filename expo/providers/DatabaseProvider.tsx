@@ -40,7 +40,12 @@ export const [DatabaseProvider, useDatabase] = createContextHook((): DatabaseSta
       return;
     }
     let mounted = true;
+    // Never expose the previous game's database/catalog while the selected TCG is changing.
     setIsReady(false);
+    setDb(null);
+    setHasCatalog(false);
+    setCatalogCount(0);
+    setSyncProgress(null);
     void queryClient.invalidateQueries();
     (async () => {
       try {
