@@ -6,18 +6,19 @@ import { Search, Plus, Check, X, Layers, Filter } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { useDatabase } from '@/providers/DatabaseProvider';
+import { useTCG } from '@/providers/TCGProvider';
+import { getTCGPresentation } from '@/tcg/presentation';
 import { safeQuery, safeRun } from '@/utils/database';
 import CardImage from '@/components/CardImage';
 import type { CardWithDetails, InkStats } from '@/types/database';
-
-const INK_ORDER = ['Amber', 'Amethyst', 'Emerald', 'Ruby', 'Sapphire', 'Steel'];
-const TYPE_ORDER = ['Character', 'Action', 'Item', 'Song', 'Location'];
 
 export default function AddCardScreen() {
   const { deckId } = useLocalSearchParams<{ deckId: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
   const { db, hasCatalog } = useDatabase();
+  const { tcg } = useTCG();
+  const presentation = tcg ? getTCGPresentation(tcg) : null;
   const [search, setSearch] = useState<string>('');
   const [addedCards, setAddedCards] = useState<Map<number, number>>(new Map());
   const [filterInk, setFilterInk] = useState<string | null>(null);
@@ -68,16 +69,17 @@ export default function AddCardScreen() {
     enabled: !!db && deckIdNum > 0,
   });
 
-  const hasMaxColors = (deckInkColors?.length ?? 0) >= 2;
-  const allowedInks = hasMaxColors ? deckInkColors ?? [] : INK_ORDER;
+  const deckColorLimit = presentation?.deckColorLimit ?? null;
+  const hasMaxColors = deckColorLimit !== null && (deckInkColors?.length ?? 0) >= deckColorLimit;
+  const allowedInks = hasMaxColors ? deckInkColors ?? [] : (presentation?.deckColors ?? []);
 
   const availableInks = useMemo(() => {
     if (hasMaxColors) return deckInkColors ?? [];
-    return INK_ORDER;
-  }, [hasMaxColors, deckInkColors]);
+    return presentation?.deckColors ?? [];
+  }, [hasMaxColors, deckInkColors, presentation]);
 
   const { data: cards, isLoading } = useQuery({
-    queryKey: ['add-card-search', search, filterInk, filterType, !!db],
+    queryKey: ['add-card-search', tcg, search, filterInk, filterType, !!db],
     queryFn: async () => {
       if (!db) return [];
 
@@ -162,7 +164,7 @@ export default function AddCardScreen() {
           <View style={cardStyles.info}>
             <Text style={cardStyles.name} numberOfLines={1}>{item.name}</Text>
             <View style={cardStyles.meta}>
-              <View style={[cardStyles.inkDot, { backgroundColor: inkColor }]} />
+              {item.ink_color ? <View style={[cardStyles.inkDot, { backgroundColor: inkColor }]} /> : null}
               {item.cost !== null && <Text style={cardStyles.cost}>{item.cost}</Text>}
               <Text style={cardStyles.type}>{item.type ?? ''}</Text>
               {item.card_number ? <Text style={cardStyles.cardNum}>#{item.card_number}</Text> : null}
@@ -240,7 +242,7 @@ export default function AddCardScreen() {
           })}
         </ScrollView>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
-          {TYPE_ORDER.map(type => {
+          {(presentation?.cardTypes ?? []).map(type => {
             const active = filterType === type;
             return (
               <TouchableOpacity
@@ -258,7 +260,7 @@ export default function AddCardScreen() {
       {hasMaxColors && (
         <View style={styles.colorNotice}>
           <Text style={styles.colorNoticeText}>
-            Deck has 2 ink colors — showing only {allowedInks.join(' & ')} cards
+            Deck has reached its {presentation?.deckColorLabel?.toLowerCase() ?? 'color'} limit — showing only {allowedInks.join(' & ')} cards
           </Text>
         </View>
       )}
