@@ -21,7 +21,9 @@ CREATE TABLE IF NOT EXISTS cards (
   classifications TEXT,
   franchise TEXT,
   date_added TEXT,
-  date_modified TEXT
+  date_modified TEXT,
+  market_price REAL,
+  inventory_price REAL
 );
 
 CREATE TABLE IF NOT EXISTS sets (
