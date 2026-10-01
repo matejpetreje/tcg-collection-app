@@ -16,7 +16,7 @@ import { safeQuery, safeRun, backupCardIdMapping, getSavedCardIdMapping, buildV1
 import { RESET_USER_DATA_SQL, RESET_CATALOG_SQL } from '@/constants/schema';
 import { TCGS } from '@/constants/tcgs';
 import { getTCG } from '@/tcg/registry';
-import { importLogiaOnePieceCollection, type LogiaImportMode } from '@/utils/logia-import';
+import { importLogiaOnePieceCollection } from '@/utils/logia-import';
 
 const PLAYERS_STORAGE_KEY = 'lorcana_players';
 const PRIMARY_PLAYER_KEY = 'lorcana_primary_player';
@@ -443,7 +443,7 @@ export default function SettingsScreen() {
   });
 
   const importLogia = useMutation({
-    mutationFn: async (mode: LogiaImportMode) => {
+    mutationFn: async () => {
       if (!db) throw new Error('Database not ready');
       if (tcg !== 'onepiece') {
         throw new Error('Logia CSV import is currently available for One Piece only.');
@@ -473,7 +473,7 @@ export default function SettingsScreen() {
         csvText = await response.text();
       }
 
-      return importLogiaOnePieceCollection(db, csvText, mode);
+      return importLogiaOnePieceCollection(db, csvText);
     },
     onSuccess: (result) => {
       if (!result) return;
@@ -638,11 +638,10 @@ export default function SettingsScreen() {
             onPress={() => {
               Alert.alert(
                 'Import Logia Collection',
-                'Choose the CSV exported from Logia. This imports only your One Piece collection; decks, wishlist and game history are left untouched.\n\nReplace Collection clears the current One Piece collection first. Merge adds the CSV quantities to what you already own.',
+                'Choose the CSV exported from Logia. Importing will delete every card currently marked as owned in this One Piece collection and replace ownership with the contents of the selected CSV. Decks, wishlist and game history are left untouched.',
                 [
                   { text: 'Cancel', style: 'cancel' },
-                  { text: 'Merge', onPress: () => importLogia.mutate('merge') },
-                  { text: 'Replace Collection', style: 'destructive', onPress: () => importLogia.mutate('replace') },
+                  { text: 'Choose CSV & Replace', style: 'destructive', onPress: () => importLogia.mutate() },
                 ]
               );
             }}
@@ -653,7 +652,7 @@ export default function SettingsScreen() {
             </View>
             <View style={styles.rowContent}>
               <Text style={styles.rowTitle}>Import from Logia CSV</Text>
-              <Text style={styles.rowSubtitle}>Load your One Piece collection exported from Logia</Text>
+              <Text style={styles.rowSubtitle}>Replace owned One Piece cards with a Logia CSV export</Text>
             </View>
             {importLogia.isPending
               ? <ActivityIndicator size="small" color={Colors.primary} />
