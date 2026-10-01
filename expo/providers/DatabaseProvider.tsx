@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 import * as SQLite from 'expo-sqlite';
 import createContextHook from '@nkzw/create-context-hook';
 import { useQueryClient } from '@tanstack/react-query';
-import { getDatabase, closeAllDatabases, initializeTables, checkCatalogExists, getCardCount, syncCardsFromApi } from '@/utils/database';
+import { getDatabase, closeAllDatabasesSync, initializeTables, checkCatalogExists, getCardCount, syncCardsFromApi } from '@/utils/database';
 import { useTCG } from '@/providers/TCGProvider';
 import type { TCGId } from '@/constants/tcgs';
 
@@ -36,17 +36,19 @@ export const [DatabaseProvider, useDatabase] = createContextHook((): DatabaseSta
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
 
     const releaseWebDatabases = () => {
-      void closeAllDatabases();
+      closeAllDatabasesSync();
     };
 
-    // Best-effort cleanup for Expo SQLite's exclusive OPFS access handles.
-    // This reduces stale locks after reloads, tab closes and Fast Refresh.
+    // Expo SQLite Web uses exclusive OPFS Access Handles. Browser unload handlers
+    // cannot reliably finish awaited work, so release the handles synchronously.
     window.addEventListener('pagehide', releaseWebDatabases);
     window.addEventListener('beforeunload', releaseWebDatabases);
+    window.addEventListener('unload', releaseWebDatabases);
 
     return () => {
       window.removeEventListener('pagehide', releaseWebDatabases);
       window.removeEventListener('beforeunload', releaseWebDatabases);
+      window.removeEventListener('unload', releaseWebDatabases);
     };
   }, []);
 
