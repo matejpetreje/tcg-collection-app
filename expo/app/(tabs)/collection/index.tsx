@@ -595,7 +595,7 @@ export default function CollectionScreen() {
             </View>
             <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
               <FilterSection
-                title={isOnePiece ? "Color" : "Ink Color"
+                title={isOnePiece ? "Color" : "Ink Color"}
                 items={filterOptions?.inks ?? []}
                 selected={filters.inkColors}
                 onToggle={(item) => toggleFilterItem('inkColors', item)}
