@@ -6,7 +6,7 @@ import { useTCG } from "@/providers/TCGProvider";
 
 export default function TabLayout() {
   const { tcg } = useTCG();
-  const hideLore = tcg === 'onepiece';
+  const showLore = tcg === 'lorcana';
   return (
     <Tabs
       screenOptions={{
@@ -36,7 +36,7 @@ export default function TabLayout() {
         options={{
           title: "Lore",
           tabBarIcon: ({ color, size }) => <Target size={size} color={color} />,
-          href: hideLore ? null : undefined,
+          href: showLore ? undefined : null,
         }}
       />
       <Tabs.Screen
