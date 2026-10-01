@@ -9,7 +9,7 @@ export interface TCGDefinition {
   color: string;
   gradient: [string, string];
   databaseFile: string;
-  catalogSource: 'lorcana-api' | 'optcgapi' | 'ygoprodeck' | 'pending';
+  catalogSource: 'lorcana-api' | 'optcgapi' | 'ygoprodeck' | 'scryfall' | 'pending';
   features: {
     dashboard: boolean;
     collection: boolean;
