@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Heart, HeartOff, Layers, Tag, ChevronDown, ChevronUp, Droplets, DropletOff, MoreHorizontal, ExternalLink, TrendingUp, TrendingDown, BarChart3, DollarSign, Sparkles } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
+import { getCardFoundation } from '@/constants/tcg-card-foundations';
 import { useDatabase } from '@/providers/DatabaseProvider';
 import { useTCG } from '@/providers/TCGProvider';
 import { safeQueryFirst, safeQuery, safeRun } from '@/utils/database';
@@ -240,6 +241,7 @@ export default function CardDetailScreen() {
   }
 
   const cardNote = card.note ?? null;
+  const gameStats = tcg === 'lorcana' ? [] : getCardFoundation(tcg).getDisplayStats(card);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -284,30 +286,19 @@ export default function CardDetailScreen() {
       )}
 
       <View style={styles.statsRow}>
-        {card.cost != null && (
-          <View style={styles.statItem}>
-            <Text style={[styles.statValue, { color: Colors.primary }]}>{card.cost}</Text>
-            <Text style={styles.statLabel}>COST</Text>
+        {tcg === 'lorcana' ? (
+          <>
+            {card.cost != null && <View style={styles.statItem}><Text style={[styles.statValue, { color: Colors.primary }]}>{card.cost}</Text><Text style={styles.statLabel}>COST</Text></View>}
+            {card.strength != null && card.strength !== 0 && <View style={styles.statItem}><Text style={styles.statValue}>{card.strength}</Text><Text style={styles.statLabel}>ATK</Text></View>}
+            {card.willpower != null && card.willpower !== 0 && <View style={styles.statItem}><Text style={styles.statValue}>{card.willpower}</Text><Text style={styles.statLabel}>HP</Text></View>}
+            {card.lore != null && <View style={styles.statItem}><Text style={[styles.statValue, { color: Colors.accent }]}>{card.lore}</Text><Text style={styles.statLabel}>LORE</Text></View>}
+          </>
+        ) : gameStats.map(stat => (
+          <View style={styles.statItem} key={stat.key}>
+            <Text style={[styles.statValue, stat.key === 'cost' ? { color: Colors.primary } : null]}>{stat.value}</Text>
+            <Text style={styles.statLabel}>{stat.label.toUpperCase()}</Text>
           </View>
-        )}
-        {card.strength != null && card.strength !== 0 && (
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{card.strength}</Text>
-            <Text style={styles.statLabel}>ATK</Text>
-          </View>
-        )}
-        {card.willpower != null && card.willpower !== 0 && (
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{card.willpower}</Text>
-            <Text style={styles.statLabel}>{isOnePiece ? 'COUNTER' : 'HP'}</Text>
-          </View>
-        )}
-        {card.lore != null && (
-          <View style={styles.statItem}>
-            <Text style={[styles.statValue, { color: Colors.accent }]}>{card.lore}</Text>
-            <Text style={styles.statLabel}>{isOnePiece ? 'LIFE' : 'LORE'}</Text>
-          </View>
-        )}
+        ))}
       </View>
 
       {!isOnePiece && (
