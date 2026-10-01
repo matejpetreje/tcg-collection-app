@@ -360,12 +360,12 @@ export default function DecksScreen() {
               />
             </View>
             <View style={modalStyles.field}>
-              <Text style={modalStyles.label}>Ink Profile</Text>
+              <Text style={modalStyles.label}>{tcg === 'lorcana' ? 'Ink Profile' : 'Color Profile'}</Text>
               <TextInput
                 style={modalStyles.input}
                 value={customInkProfile}
                 onChangeText={setCustomInkProfile}
-                placeholder="e.g. Amber, Ruby"
+                placeholder={tcg === 'lorcana' ? 'e.g. Amber, Ruby' : 'e.g. Red, Green'}
                 placeholderTextColor={Colors.textMuted}
               />
             </View>
