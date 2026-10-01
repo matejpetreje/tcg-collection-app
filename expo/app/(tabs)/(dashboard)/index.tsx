@@ -322,7 +322,7 @@ export default function DashboardScreen() {
   });
 
   const { data: rarityDist } = useQuery({
-    queryKey: ['dashboard-rarity-dist', !!db, hasCatalog],
+    queryKey: ['dashboard-rarity-dist', currentTCG, !!db, hasCatalog],
     queryFn: async () => {
       if (!db) return [];
       const rows = await safeQuery<RarityDistItem>(
@@ -336,6 +336,10 @@ export default function DashboardScreen() {
          AND c.rarity IS NOT NULL
          GROUP BY c.rarity`
       );
+
+      if (!isLorcana) {
+        return rows.sort((a, b) => a.rarity.localeCompare(b.rarity));
+      }
 
       const userTypeRows = await safeQuery<{ user_type: string; unique_count: number; total_count: number }>(
         db,
@@ -723,7 +727,6 @@ export default function DashboardScreen() {
   };
 
   const renderRarityDist = (sectionIdx: number) => {
-    if (currentTCG === 'onepiece') return null;
     if ((rarityDist?.length ?? 0) === 0) return null;
     return (
       <View key="rarity_dist" style={[styles.section, reorderMode && styles.sectionReorder]}>
@@ -1025,7 +1028,7 @@ export default function DashboardScreen() {
           <Cloud size={32} color={Colors.textMuted} />
           <Text style={styles.noCatalogTitle}>No Cards Synced</Text>
           <Text style={styles.noCatalogText}>
-            Go to Settings and tap Sync Cards from API to download the card catalog from lorcana-api.com.
+            Go to Settings and tap Sync Cards from API to download the card catalog for the selected game.
           </Text>
         </View>
       )}
