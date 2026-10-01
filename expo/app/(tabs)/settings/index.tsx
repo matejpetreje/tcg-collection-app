@@ -6,6 +6,7 @@ import {
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import * as Clipboard from 'expo-clipboard';
+import * as DocumentPicker from 'expo-document-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import Colors from '@/constants/colors';
@@ -15,6 +16,7 @@ import { safeQuery, safeRun, backupCardIdMapping, getSavedCardIdMapping, buildV1
 import { RESET_USER_DATA_SQL, RESET_CATALOG_SQL } from '@/constants/schema';
 import { TCGS } from '@/constants/tcgs';
 import { getTCG } from '@/tcg/registry';
+import { importLogiaOnePieceCollection, type LogiaImportMode } from '@/utils/logia-import';
 
 const PLAYERS_STORAGE_KEY = 'lorcana_players';
 const PRIMARY_PLAYER_KEY = 'lorcana_primary_player';
@@ -440,6 +442,61 @@ export default function SettingsScreen() {
     },
   });
 
+  const importLogia = useMutation({
+    mutationFn: async (mode: LogiaImportMode) => {
+      if (!db) throw new Error('Database not ready');
+      if (tcg !== 'onepiece') {
+        throw new Error('Logia CSV import is currently available for One Piece only.');
+      }
+
+      const picked = await DocumentPicker.getDocumentAsync({
+        type: ['text/csv', 'text/comma-separated-values', 'application/csv', 'text/plain'],
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+
+      if (picked.canceled || !picked.assets?.length) {
+        return null;
+      }
+
+      const asset = picked.assets[0];
+      let csvText = '';
+
+      const webFile = (asset as typeof asset & { file?: File }).file;
+      if (webFile && typeof webFile.text === 'function') {
+        csvText = await webFile.text();
+      } else {
+        const response = await fetch(asset.uri);
+        if (!response.ok) {
+          throw new Error(`Could not read selected CSV file (HTTP ${response.status}).`);
+        }
+        csvText = await response.text();
+      }
+
+      return importLogiaOnePieceCollection(db, csvText, mode);
+    },
+    onSuccess: (result) => {
+      if (!result) return;
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      void queryClient.invalidateQueries();
+
+      const skipped = result.skippedRows > 0
+        ? `\n\nSkipped rows: ${result.skippedRows}.${result.skippedPreview.length ? `\nExamples:\n${result.skippedPreview.join('\n')}` : ''}`
+        : '';
+      const ambiguous = result.ambiguousRows > 0
+        ? `\n\n${result.ambiguousRows} rows matched more than one catalog artwork; the closest match was selected.`
+        : '';
+
+      Alert.alert(
+        'Logia Import Complete',
+        `Imported ${result.importedCopies} copies across ${result.importedCards} catalog cards from ${result.matchedRows}/${result.totalRows} CSV rows.${skipped}${ambiguous}`
+      );
+    },
+    onError: (error: Error) => {
+      Alert.alert('Logia Import Error', error.message);
+    },
+  });
+
   const { mutate: doResetData, isPending: isResetting } = useMutation({
     mutationFn: async (opts: { resync: boolean }) => {
       if (!db) throw new Error('Database not ready');
@@ -574,6 +631,35 @@ export default function SettingsScreen() {
           </View>
           {importData.isPending ? <ActivityIndicator size="small" color={Colors.success} /> : <ChevronRight size={16} color={Colors.textMuted} />}
         </TouchableOpacity>
+
+        {tcg === 'onepiece' && (
+          <TouchableOpacity
+            style={styles.row}
+            onPress={() => {
+              Alert.alert(
+                'Import Logia Collection',
+                'Choose the CSV exported from Logia. This imports only your One Piece collection; decks, wishlist and game history are left untouched.\n\nReplace Collection clears the current One Piece collection first. Merge adds the CSV quantities to what you already own.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Merge', onPress: () => importLogia.mutate('merge') },
+                  { text: 'Replace Collection', style: 'destructive', onPress: () => importLogia.mutate('replace') },
+                ]
+              );
+            }}
+            disabled={importLogia.isPending}
+          >
+            <View style={[styles.rowIcon, { backgroundColor: Colors.primary + '20' }]}>
+              <Download size={18} color={Colors.primary} />
+            </View>
+            <View style={styles.rowContent}>
+              <Text style={styles.rowTitle}>Import from Logia CSV</Text>
+              <Text style={styles.rowSubtitle}>Load your One Piece collection exported from Logia</Text>
+            </View>
+            {importLogia.isPending
+              ? <ActivityIndicator size="small" color={Colors.primary} />
+              : <ChevronRight size={16} color={Colors.textMuted} />}
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={styles.section}>
