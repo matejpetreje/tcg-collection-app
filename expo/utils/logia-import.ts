@@ -1,7 +1,5 @@
 import type * as SQLite from 'expo-sqlite';
 
-export type LogiaImportMode = 'replace' | 'merge';
-
 export interface LogiaImportResult {
   totalRows: number;
   matchedRows: number;
@@ -185,8 +183,7 @@ function chooseCandidate(row: LogiaRow, input: CatalogCard[]): { card: CatalogCa
 
 export async function importLogiaOnePieceCollection(
   db: SQLite.SQLiteDatabase,
-  csv: string,
-  mode: LogiaImportMode
+  csv: string
 ): Promise<LogiaImportResult> {
   const rows = parseLogiaCsv(csv);
   const catalog = await db.getAllAsync<CatalogCard>(
@@ -253,42 +250,30 @@ export async function importLogiaOnePieceCollection(
     quantities.set(card.id, current);
   }
 
-  if (mode === 'replace') {
-    await db.runAsync('DELETE FROM user_collection');
-    await db.runAsync('DELETE FROM card_printing_collection');
-  }
+  // A Logia upload is authoritative for ownership in the current game.
+  // Clear every owned-card record only after the CSV has been parsed and matched,
+  // so a bad/cancelled file can never wipe the existing collection.
+  await db.runAsync('DELETE FROM card_printing_collection');
+  await db.runAsync('DELETE FROM user_collection');
 
   for (const [cardId, item] of quantities) {
-    if (mode === 'merge') {
-      await db.runAsync(
-        `INSERT INTO user_collection
-          (card_id, qty, qty_foil, qty_enchanted, qty_epic, qty_promo, qty_iconic, qty_play, condition, language, note, updated_at)
-         VALUES (?, ?, 0, 0, 0, 0, 0, 0, NULL, ?, 'Imported from Logia CSV', datetime('now'))
-         ON CONFLICT(card_id) DO UPDATE SET
-           qty = user_collection.qty + excluded.qty,
-           language = COALESCE(user_collection.language, excluded.language),
-           updated_at = datetime('now')`,
-        [cardId, item.qty, item.language]
-      );
-    } else {
-      await db.runAsync(
-        `INSERT INTO user_collection
-          (card_id, qty, qty_foil, qty_enchanted, qty_epic, qty_promo, qty_iconic, qty_play, condition, language, note, updated_at)
-         VALUES (?, ?, 0, 0, 0, 0, 0, 0, NULL, ?, 'Imported from Logia CSV', datetime('now'))
-         ON CONFLICT(card_id) DO UPDATE SET
-           qty = excluded.qty,
-           qty_foil = 0,
-           qty_enchanted = 0,
-           qty_epic = 0,
-           qty_promo = 0,
-           qty_iconic = 0,
-           qty_play = 0,
-           language = excluded.language,
-           note = excluded.note,
-           updated_at = datetime('now')`,
-        [cardId, item.qty, item.language]
-      );
-    }
+    await db.runAsync(
+      `INSERT INTO user_collection
+        (card_id, qty, qty_foil, qty_enchanted, qty_epic, qty_promo, qty_iconic, qty_play, condition, language, note, updated_at)
+       VALUES (?, ?, 0, 0, 0, 0, 0, 0, NULL, ?, 'Imported from Logia CSV', datetime('now'))
+       ON CONFLICT(card_id) DO UPDATE SET
+         qty = excluded.qty,
+         qty_foil = 0,
+         qty_enchanted = 0,
+         qty_epic = 0,
+         qty_promo = 0,
+         qty_iconic = 0,
+         qty_play = 0,
+         language = excluded.language,
+         note = excluded.note,
+         updated_at = datetime('now')`,
+      [cardId, item.qty, item.language]
+    );
   }
 
   const skippedRows = rows.length - matchedRows;
@@ -296,7 +281,7 @@ export async function importLogiaOnePieceCollection(
     `INSERT INTO import_log (imported_at, source, notes)
      VALUES (datetime('now'), 'Logia CSV', ?)`,
     [
-      `Mode: ${mode}. Rows: ${rows.length}. Matched: ${matchedRows}. Skipped: ${skippedRows}. Cards: ${quantities.size}. Copies: ${importedCopies}. Ambiguous: ${ambiguousRows}.`,
+      `Mode: replace ownership. Rows: ${rows.length}. Matched: ${matchedRows}. Skipped: ${skippedRows}. Cards: ${quantities.size}. Copies: ${importedCopies}. Ambiguous: ${ambiguousRows}.`,
     ]
   );
 
