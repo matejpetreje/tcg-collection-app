@@ -79,7 +79,7 @@ export default function CardDetailScreen() {
   });
 
   const { data: otherPrintings } = useQuery({
-    queryKey: ['card-printings', card?.card_number, cardIdNum, !!db],
+    queryKey: ['card-printings', tcg, card?.card_number, cardIdNum, !!db],
     queryFn: async () => {
       if (!db || !card?.card_number) return [];
       return safeQuery<CardWithDetails>(
@@ -101,7 +101,7 @@ export default function CardDetailScreen() {
         [card.card_number, cardIdNum]
       );
     },
-    enabled: !!db && !!card?.card_number,
+    enabled: !!db && !!card?.card_number && tcg !== 'yugioh',
   });
 
   const { data: wishlistItem } = useQuery({
@@ -243,7 +243,35 @@ export default function CardDetailScreen() {
   }
 
   const cardNote = card.note ?? null;
-  const gameStats = tcg === 'lorcana' ? [] : getCardFoundation(tcg).getDisplayStats(card);
+  const gameStats = tcg && tcg !== 'lorcana' ? getCardFoundation(tcg).getDisplayStats(card) : [];
+
+  let yugiohPrintings: Array<{ set_name: string; set_code: string; rarity: string; price: string | null }> = [];
+  let yugiohArtworks: Array<{ id: number; image_url: string; thumbnail_url: string }> = [];
+  if (tcg === 'yugioh' && card.game_data) {
+    try {
+      const data = JSON.parse(card.game_data) as {
+        printings?: Array<{ set_name?: string; set_code?: string; rarity?: string; price?: string | null }>;
+        artworks?: Array<{ id?: number; image_url?: string; thumbnail_url?: string }>;
+      };
+      yugiohPrintings = (data.printings ?? [])
+        .filter(p => !!p.set_name && !!p.set_code)
+        .map(p => ({
+          set_name: p.set_name ?? '',
+          set_code: p.set_code ?? '',
+          rarity: p.rarity ?? '',
+          price: p.price ?? null,
+        }));
+      yugiohArtworks = (data.artworks ?? [])
+        .filter(a => !!a.image_url)
+        .map(a => ({
+          id: a.id ?? card.id,
+          image_url: a.image_url ?? '',
+          thumbnail_url: a.thumbnail_url ?? a.image_url ?? '',
+        }));
+    } catch {
+      // Invalid legacy game_data should never block the card detail.
+    }
+  }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -358,6 +386,45 @@ export default function CardDetailScreen() {
           <Text style={styles.setLabel}>Set</Text>
           <Text style={styles.setName}>{card.set_name} ({card.set_code})</Text>
           {card.release_date && <Text style={styles.setDate}>{card.release_date}</Text>}
+        </View>
+      )}
+
+      {tcg === 'yugioh' && yugiohPrintings.length > 0 && (
+        <View style={styles.printingsSection}>
+          <Text style={styles.sectionTitle}>Printings</Text>
+          <Text style={styles.printingsHint}>
+            YGOPRODeck printings for this passcode. Rarity belongs to each printing, not to the base card.
+          </Text>
+          <View style={styles.ygoPrintingList}>
+            {yugiohPrintings.map((printing, index) => (
+              <View key={`${printing.set_code}-${index}`} style={styles.ygoPrintingRow}>
+                <View style={styles.ygoPrintingInfo}>
+                  <Text style={styles.ygoPrintingSet} numberOfLines={1}>{printing.set_name}</Text>
+                  <Text style={styles.ygoPrintingCode}>{printing.set_code}</Text>
+                </View>
+                <Text style={styles.ygoPrintingRarity}>{printing.rarity || '—'}</Text>
+                {printing.price ? <Text style={styles.ygoPrintingPrice}>${printing.price}</Text> : null}
+              </View>
+            ))}
+          </View>
+          {yugiohArtworks.length > 1 && (
+            <>
+              <Text style={[styles.sectionTitle, { marginTop: 8 }]}>Artworks</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.printingsRow}>
+                {yugiohArtworks.map((art, index) => (
+                  <View key={`${art.id}-${index}`} style={styles.printingCard}>
+                    <CardImage
+                      cardId={card.id}
+                      imageUrl={art.image_url}
+                      thumbnailUrl={art.thumbnail_url}
+                      size="medium"
+                    />
+                    <Text style={styles.printingLabel}>Artwork {index + 1}</Text>
+                  </View>
+                ))}
+              </ScrollView>
+            </>
+          )}
         </View>
       )}
 
@@ -876,6 +943,44 @@ const styles = StyleSheet.create({
   printingOwned: {
     color: Colors.primary,
     fontSize: 10,
+    fontWeight: '700' as const,
+  },
+  ygoPrintingList: {
+    gap: 6,
+    marginTop: 6,
+  },
+  ygoPrintingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: Colors.surfaceLight,
+  },
+  ygoPrintingInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  ygoPrintingSet: {
+    color: Colors.text,
+    fontSize: 12,
+    fontWeight: '600' as const,
+  },
+  ygoPrintingCode: {
+    color: Colors.textMuted,
+    fontSize: 10,
+  },
+  ygoPrintingRarity: {
+    color: Colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '600' as const,
+    maxWidth: 130,
+    textAlign: 'right' as const,
+  },
+  ygoPrintingPrice: {
+    color: Colors.primaryLight,
+    fontSize: 11,
     fontWeight: '700' as const,
   },
   collectionSection: {
