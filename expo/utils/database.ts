@@ -494,8 +494,8 @@ async function syncOnePiece(
         await txn.runAsync(
           `INSERT INTO cards (name, version, cost, ink_color, type, rarity, set_code, card_number,
             body_text, flavor_text, strength, willpower, lore, move_cost, inkable, unique_id,
-            classifications, franchise, date_added, date_modified, market_price, inventory_price)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            classifications, franchise, date_added, date_modified, market_price, inventory_price, game_data)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(unique_id) DO UPDATE SET
              name = excluded.name, cost = excluded.cost, ink_color = excluded.ink_color,
              type = excluded.type, rarity = excluded.rarity, set_code = excluded.set_code,
@@ -503,7 +503,7 @@ async function syncOnePiece(
              flavor_text = excluded.flavor_text, strength = excluded.strength,
              willpower = excluded.willpower, lore = excluded.lore, classifications = excluded.classifications,
              franchise = excluded.franchise, market_price = excluded.market_price,
-             inventory_price = excluded.inventory_price`,
+             inventory_price = excluded.inventory_price, game_data = excluded.game_data`,
           [
             c.name ?? '',
             null,
@@ -527,6 +527,21 @@ async function syncOnePiece(
             null,
             c.marketPrice ?? null,
             c.inventoryPrice ?? null,
+            JSON.stringify({
+              card_type: c.type ?? null,
+              color: c.color ?? null,
+              cost: c.cost ?? null,
+              power: c.power ?? null,
+              counter: counter,
+              life,
+              attribute: c.attribute?.name ?? null,
+              traits: c.family ?? null,
+              effect: c.ability ?? null,
+              trigger: c.trigger ?? null,
+              card_number: c.code ?? null,
+              rarity: c.rarity ?? null,
+              set_name: c.set?.name ?? null,
+            }),
           ]
         );
 
