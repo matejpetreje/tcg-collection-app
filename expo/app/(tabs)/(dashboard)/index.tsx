@@ -507,6 +507,56 @@ export default function DashboardScreen() {
     queryKey: ['dashboard-set-progress', currentTCG, !!db, hasCatalog],
     queryFn: async () => {
       if (!db) return [];
+
+      if (isYugioh) {
+        const rows = await safeQuery<{ id: number; game_data: string | null }>(
+          db,
+          'SELECT id, game_data FROM cards WHERE game_data IS NOT NULL'
+        );
+        const ownedPrints = await safeQuery<{ card_id: number; set_code: string; qty: number }>(
+          db,
+          'SELECT card_id, set_code, qty FROM card_printing_collection WHERE qty > 0'
+        );
+
+        const totals = new Map<string, { set_name: string; cardIds: Set<number> }>();
+        for (const row of rows) {
+          try {
+            const data = JSON.parse(row.game_data ?? '{}') as {
+              printings?: Array<{ set_name?: string; set_code?: string }>;
+            };
+            for (const printing of data.printings ?? []) {
+              const code = printing.set_code?.trim();
+              if (!code) continue;
+              const existing = totals.get(code) ?? {
+                set_name: printing.set_name?.trim() || code,
+                cardIds: new Set<number>(),
+              };
+              existing.cardIds.add(row.id);
+              if (printing.set_name?.trim()) existing.set_name = printing.set_name.trim();
+              totals.set(code, existing);
+            }
+          } catch {
+            // Ignore malformed legacy game_data.
+          }
+        }
+
+        const ownedBySet = new Map<string, Set<number>>();
+        for (const row of ownedPrints) {
+          const set = ownedBySet.get(row.set_code) ?? new Set<number>();
+          set.add(row.card_id);
+          ownedBySet.set(row.set_code, set);
+        }
+
+        return Array.from(totals.entries())
+          .map(([set_code, info]) => ({
+            set_code,
+            set_name: info.set_name,
+            owned: ownedBySet.get(set_code)?.size ?? 0,
+            total: info.cardIds.size,
+          }))
+          .sort((a, b) => a.set_name.localeCompare(b.set_name));
+      }
+
       return safeQuery<SetProgress>(
         db,
         `SELECT c.set_code,
@@ -972,7 +1022,7 @@ export default function DashboardScreen() {
   };
 
   const renderSetProgress = (sectionIdx: number) => {
-    if (isYugioh || (setProgress?.length ?? 0) === 0) return null;
+    if ((setProgress?.length ?? 0) === 0) return null;
     return (
       <View key="set_progress" style={[styles.section, reorderMode && styles.sectionReorder]}>
         <View style={styles.sectionHeaderRow}>
