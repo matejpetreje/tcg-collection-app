@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parser } from 'stream-json';
 import { streamArray } from 'stream-json/streamers/StreamArray.js';
-import { chain } from 'stream-chain';
 import { db, getMeta, setMeta } from './db.js';
 import { config } from './config.js';
 import { downloadBulkFile, getDefaultCardsBulkMeta } from './scryfall.js';
@@ -139,11 +138,9 @@ async function importBulk(filePath: string, updatedAt: string): Promise<number> 
     }
   });
 
-  const stream = chain([
-    fs.createReadStream(filePath),
-    parser(),
-    streamArray(),
-  ]);
+  const stream = fs.createReadStream(filePath)
+    .pipe(parser())
+    .pipe(streamArray());
 
   for await (const item of stream) {
     batch.push(item.value as ScryfallCard);
@@ -255,8 +252,15 @@ async function mirrorImages(): Promise<void> {
         if (mirrored % 1000 === 0) console.log(`[MTG Server] Mirrored ${mirrored} images`);
       } catch (error) {
         console.log(`[MTG Server] Image mirror failed for ${row.scryfall_id}:`, (error as Error).message);
-        db.prepare('UPDATE mtg_printings SET local_thumbnail_url = source_thumbnail_url WHERE scryfall_id=?')
-          .run(row.scryfall_id);
+        db.prepare(`
+          UPDATE mtg_printings
+          SET local_thumbnail_url = COALESCE(local_thumbnail_url, source_thumbnail_url),
+              local_image_url = CASE
+                WHEN ? = 'full' THEN COALESCE(local_image_url, source_image_url)
+                ELSE local_image_url
+              END
+          WHERE scryfall_id=?
+        `).run(config.mtgImageMirror, row.scryfall_id);
       }
     });
   }
