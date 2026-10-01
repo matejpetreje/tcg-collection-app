@@ -12,6 +12,8 @@ import { getTCGDatabaseFile } from '@/tcg/registry';
 interface DatabaseRuntimeState {
   dbInstances: Record<string, SQLite.SQLiteDatabase>;
   dbOpening: Record<string, Promise<SQLite.SQLiteDatabase> | undefined>;
+  webClientId: string;
+  webChannel?: BroadcastChannel;
 }
 
 const runtimeGlobal = globalThis as typeof globalThis & {
@@ -23,11 +25,82 @@ const runtimeGlobal = globalThis as typeof globalThis & {
 const databaseRuntime = runtimeGlobal.__tcgCollectionDatabaseRuntime ?? {
   dbInstances: {},
   dbOpening: {},
+  webClientId: Math.random().toString(36).slice(2),
 };
 runtimeGlobal.__tcgCollectionDatabaseRuntime = databaseRuntime;
 
 const dbInstances = databaseRuntime.dbInstances;
 const dbOpening = databaseRuntime.dbOpening;
+
+function closeDatabaseFileSync(file: string): void {
+  const database = dbInstances[file];
+  if (!database) {
+    delete dbOpening[file];
+    return;
+  }
+
+  try {
+    database.closeSync();
+    console.log(`[DB] Closed ${file} (sync)`);
+  } catch (error) {
+    console.log(`[DB] Sync close skipped for ${file}:`, (error as Error).message);
+  } finally {
+    delete dbInstances[file];
+    delete dbOpening[file];
+  }
+}
+
+export function closeAllDatabasesSync(): void {
+  for (const file of Object.keys(dbInstances)) {
+    closeDatabaseFileSync(file);
+  }
+}
+
+function ensureWebDatabaseChannel(): void {
+  if (Platform.OS !== 'web' || typeof BroadcastChannel === 'undefined' || databaseRuntime.webChannel) {
+    return;
+  }
+
+  const channel = new BroadcastChannel('tcg-collection-sqlite-owner');
+  channel.onmessage = (event: MessageEvent<{ type?: string; file?: string; requester?: string }>) => {
+    const message = event.data;
+    if (!message || message.requester === databaseRuntime.webClientId) return;
+    if (message.type !== 'release-db' || !message.file) return;
+
+    const file = message.file;
+    const opening = dbOpening[file];
+    if (opening) {
+      void opening
+        .then(() => {
+          closeDatabaseFileSync(file);
+        })
+        .catch(() => {
+          delete dbOpening[file];
+        });
+      return;
+    }
+
+    closeDatabaseFileSync(file);
+  };
+
+  databaseRuntime.webChannel = channel;
+}
+
+async function requestWebDatabaseRelease(file: string): Promise<void> {
+  if (Platform.OS !== 'web') return;
+  ensureWebDatabaseChannel();
+  databaseRuntime.webChannel?.postMessage({
+    type: 'release-db',
+    file,
+    requester: databaseRuntime.webClientId,
+  });
+
+  // Give another live tab / old app instance a moment to synchronously release
+  // Expo SQLite's exclusive OPFS Access Handle before this tab opens the file.
+  await new Promise(resolve => setTimeout(resolve, 200));
+}
+
+ensureWebDatabaseChannel();
 
 export async function closeAllDatabases(): Promise<void> {
   const entries = Object.entries(dbInstances);
@@ -103,12 +176,29 @@ export async function getDatabase(tcg: TCGId = 'lorcana'): Promise<SQLite.SQLite
   const opening = dbOpening[file];
   if (opening) return opening;
 
+  await requestWebDatabaseRelease(file);
+
+  // Another call may have opened the database while we were waiting.
+  const afterReleaseExisting = dbInstances[file];
+  if (afterReleaseExisting) return afterReleaseExisting;
+  const afterReleaseOpening = dbOpening[file];
+  if (afterReleaseOpening) return afterReleaseOpening;
+
   console.log(`[DB] Opening database ${file}`);
-  const promise = SQLite.openDatabaseAsync(file)
+  const promise = SQLite.openDatabaseAsync(file, { useNewConnection: false })
     .then((instance) => {
       dbInstances[file] = instance;
       console.log(`[DB] ${file} opened successfully`);
       return instance;
+    })
+    .catch((error) => {
+      const message = (error as Error).message ?? String(error);
+      if (Platform.OS === 'web' && (message.includes('createSyncAccessHandle') || message.includes('NoModificationAllowedError'))) {
+        throw new Error(
+          `The ${file} database is locked by another browser tab or an older Expo SQLite worker. Close other localhost app tabs and reload this tab. The app now prevents new duplicate handles and asks other updated tabs to release the database automatically.`
+        );
+      }
+      throw error;
     })
     .finally(() => {
       delete dbOpening[file];
