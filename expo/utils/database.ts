@@ -5,6 +5,7 @@ import { CATALOG_TABLES_SQL, USER_TABLES_SQL, USER_INDEXES_SQL, VIEWS_SQL } from
 import { fetchAllCards } from '@/utils/api';
 import { fetchAllOnePieceCards, type OnePieceApiCard } from '@/utils/onepiece-api';
 import { fetchAllYugiohCards, type YugiohApiCard } from '@/utils/yugioh-api';
+import { fetchAllMtgPrintings, type ScryfallCard } from '@/utils/mtg-api';
 import type { TCGId } from '@/constants/tcgs';
 import { getTCGDatabaseFile } from '@/tcg/registry';
 
@@ -808,6 +809,277 @@ async function syncYugioh(
   return inserted;
 }
 
+
+const MTG_COLOR_NAMES: Record<string, string> = {
+  W: 'White',
+  U: 'Blue',
+  B: 'Black',
+  R: 'Red',
+  G: 'Green',
+};
+
+function mtgColorLabel(colors: string[] | null | undefined): string {
+  if (!colors || colors.length === 0) return 'Colorless';
+  return colors.map(c => MTG_COLOR_NAMES[c] ?? c).join(',');
+}
+
+function mtgBaseType(typeLine: string | null | undefined): string | null {
+  const type = typeLine ?? '';
+  const order = ['Creature', 'Planeswalker', 'Instant', 'Sorcery', 'Artifact', 'Enchantment', 'Land', 'Battle'];
+  return order.find(t => type.includes(t)) ?? (type.split('—')[0]?.trim().split(' ').pop() || null);
+}
+
+function mtgImage(card: ScryfallCard): { image: string | null; thumb: string | null } {
+  const uris = card.image_uris ?? card.card_faces?.find(f => f.image_uris)?.image_uris;
+  return {
+    image: uris?.normal ?? uris?.large ?? uris?.png ?? null,
+    thumb: uris?.small ?? uris?.normal ?? uris?.large ?? null,
+  };
+}
+
+function mtgOracleText(card: ScryfallCard): string | null {
+  if (card.oracle_text) return card.oracle_text;
+  const parts = (card.card_faces ?? [])
+    .map(face => face.oracle_text?.trim())
+    .filter((v): v is string => !!v);
+  return parts.length > 0 ? parts.join('\n//\n') : null;
+}
+
+function mtgManaCost(card: ScryfallCard): string | null {
+  if (card.mana_cost) return card.mana_cost;
+  const parts = (card.card_faces ?? [])
+    .map(face => face.mana_cost?.trim())
+    .filter((v): v is string => !!v);
+  return parts.length > 0 ? parts.join(' // ') : null;
+}
+
+function mtgFaceStat(card: ScryfallCard, key: 'power' | 'toughness' | 'loyalty' | 'defense'): string | null {
+  const direct = card[key];
+  if (typeof direct === 'string' && direct.length > 0) return direct;
+  for (const face of card.card_faces ?? []) {
+    const value = face[key];
+    if (typeof value === 'string' && value.length > 0) return value;
+  }
+  return null;
+}
+
+async function syncMtg(
+  db: SQLite.SQLiteDatabase,
+  onProgress?: (current: number, total: number) => void
+): Promise<number> {
+  const printings = await fetchAllMtgPrintings((current, total) => {
+    onProgress?.(current, total);
+  });
+  console.log(`[Sync:MTG] Received ${printings.length} Scryfall printings`);
+
+  type MtgAggregate = {
+    oracleId: string;
+    name: string;
+    representative: ScryfallCard;
+    printings: ScryfallCard[];
+  };
+
+  const grouped = new Map<string, MtgAggregate>();
+  const setsMap = new Map<string, { name: string; releaseDate: string | null }>();
+
+  for (const printing of printings) {
+    if (printing.digital) continue;
+    const oracleId = printing.oracle_id ?? printing.id;
+    const existing = grouped.get(oracleId);
+    if (!existing) {
+      grouped.set(oracleId, {
+        oracleId,
+        name: printing.name,
+        representative: printing,
+        printings: [printing],
+      });
+    } else {
+      existing.printings.push(printing);
+      const currentDate = existing.representative.released_at ?? '';
+      const candidateDate = printing.released_at ?? '';
+      if (candidateDate > currentDate) existing.representative = printing;
+    }
+
+    if (printing.set && printing.set_name) {
+      const current = setsMap.get(printing.set);
+      if (!current || (printing.released_at ?? '') > (current.releaseDate ?? '')) {
+        setsMap.set(printing.set, {
+          name: printing.set_name,
+          releaseDate: printing.released_at ?? null,
+        });
+      }
+    }
+  }
+
+  console.log(`[Sync:MTG] Grouped into ${grouped.size} oracle cards`);
+
+  await db.execAsync('DELETE FROM subtypes;');
+  await db.execAsync('DELETE FROM abilities;');
+  await db.execAsync('DELETE FROM images;');
+
+  for (const [setCode, setInfo] of setsMap) {
+    await db.runAsync(
+      `INSERT INTO sets (set_code, name, release_date) VALUES (?, ?, ?)
+       ON CONFLICT(set_code) DO UPDATE SET
+         name = excluded.name,
+         release_date = excluded.release_date`,
+      [setCode, setInfo.name, setInfo.releaseDate]
+    );
+  }
+
+  const cards = Array.from(grouped.values()).sort((a, b) => a.name.localeCompare(b.name));
+  const total = cards.length;
+  const BATCH_SIZE = 50;
+  let inserted = 0;
+
+  for (let i = 0; i < cards.length; i += BATCH_SIZE) {
+    const batch = cards.slice(i, i + BATCH_SIZE);
+
+    await withSyncTransaction(db, async (txn) => {
+      for (const aggregate of batch) {
+        const card = aggregate.representative;
+        const uniqueId = `mtg-${aggregate.oracleId}`;
+        const baseType = mtgBaseType(card.type_line);
+        const image = mtgImage(card);
+        const manaValue = card.cmc ?? null;
+        const numericCost = manaValue != null && Number.isInteger(manaValue) ? manaValue : null;
+        const colorLabel = mtgColorLabel(card.color_identity ?? card.colors);
+        const oracleText = mtgOracleText(card);
+        const priceUsd = priceNumber(card.prices?.usd ?? null);
+        const foilUsd = priceNumber(card.prices?.usd_foil ?? card.prices?.usd_etched ?? null);
+
+        const printingData = aggregate.printings
+          .sort((a, b) => (b.released_at ?? '').localeCompare(a.released_at ?? ''))
+          .map(p => {
+            const pImage = mtgImage(p);
+            return {
+              scryfall_id: p.id,
+              set_code: p.set,
+              set_name: p.set_name,
+              collector_number: p.collector_number,
+              rarity: p.rarity,
+              released_at: p.released_at ?? null,
+              artist: p.artist ?? null,
+              illustration_id: p.illustration_id ?? null,
+              finishes: p.finishes ?? [],
+              promo: p.promo ?? false,
+              reprint: p.reprint ?? false,
+              prices: p.prices ?? null,
+              image_url: pImage.image,
+              thumbnail_url: pImage.thumb,
+              scryfall_uri: p.scryfall_uri ?? null,
+            };
+          });
+
+        await txn.runAsync(
+          `INSERT INTO cards (name, version, cost, ink_color, type, rarity, set_code, card_number,
+            body_text, flavor_text, strength, willpower, lore, move_cost, inkable, unique_id,
+            classifications, franchise, date_added, date_modified, market_price, inventory_price, game_data)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(unique_id) DO UPDATE SET
+             name = excluded.name, version = excluded.version, cost = excluded.cost,
+             ink_color = excluded.ink_color, type = excluded.type, rarity = excluded.rarity,
+             set_code = excluded.set_code, card_number = excluded.card_number,
+             body_text = excluded.body_text, strength = excluded.strength,
+             willpower = excluded.willpower, classifications = excluded.classifications,
+             date_added = excluded.date_added, market_price = excluded.market_price,
+             inventory_price = excluded.inventory_price, game_data = excluded.game_data`,
+          [
+            card.name,
+            card.layout ?? null,
+            numericCost,
+            colorLabel,
+            baseType,
+            card.rarity ? card.rarity.charAt(0).toUpperCase() + card.rarity.slice(1) : null,
+            card.set ?? null,
+            aggregate.oracleId,
+            oracleText,
+            null,
+            null,
+            null,
+            null,
+            null,
+            0,
+            uniqueId,
+            card.type_line ?? null,
+            null,
+            card.released_at ?? null,
+            null,
+            priceUsd,
+            foilUsd,
+            JSON.stringify({
+              oracle_id: aggregate.oracleId,
+              scryfall_id: card.id,
+              mana_cost: mtgManaCost(card),
+              mana_value: manaValue,
+              colors: card.colors ?? [],
+              color_identity: card.color_identity ?? [],
+              type_line: card.type_line ?? null,
+              oracle_text: oracleText,
+              collector_number: card.collector_number,
+              rarity: card.rarity ?? null,
+              power: mtgFaceStat(card, 'power'),
+              toughness: mtgFaceStat(card, 'toughness'),
+              loyalty: mtgFaceStat(card, 'loyalty'),
+              defense: mtgFaceStat(card, 'defense'),
+              keywords: card.keywords ?? [],
+              legalities: card.legalities ?? {},
+              reserved: card.reserved ?? false,
+              set_code: card.set ?? null,
+              set_name: card.set_name ?? null,
+              released_at: card.released_at ?? null,
+              artist: card.artist ?? null,
+              prices: card.prices ?? null,
+              printings: printingData,
+            }),
+          ]
+        );
+
+        const cardId = await getCardIdByUniqueId(txn, uniqueId);
+        if (cardId && image.image) {
+          await txn.runAsync(
+            `INSERT INTO images (card_id, image_url, thumbnail_url) VALUES (?, ?, ?)
+             ON CONFLICT(card_id) DO UPDATE SET
+               image_url = excluded.image_url,
+               thumbnail_url = excluded.thumbnail_url`,
+            [cardId, image.image, image.thumb ?? image.image]
+          );
+        }
+
+        if (cardId && card.type_line?.includes('—')) {
+          const subtypePart = card.type_line.split('—')[1]?.trim() ?? '';
+          const subtypes = subtypePart.split(/\s+/).map(v => v.trim()).filter(Boolean);
+          for (const subtype of subtypes) {
+            await txn.runAsync(
+              'INSERT INTO subtypes (card_id, subtype) VALUES (?, ?)',
+              [cardId, subtype]
+            );
+          }
+        }
+
+        inserted++;
+      }
+    });
+
+    onProgress?.(Math.min(inserted, total), total);
+    if (inserted % 1000 === 0 || inserted === total) {
+      console.log(`[Sync:MTG] Stored ${inserted}/${total}`);
+    }
+  }
+
+  await db.runAsync(
+    "INSERT INTO import_log (imported_at, source, notes) VALUES (datetime('now'), 'Scryfall API', ?)",
+    [`Synced ${inserted} oracle cards from ${printings.length} paper printings`]
+  );
+  await db.runAsync(
+    "INSERT INTO app_settings (key, value) VALUES ('last_sync', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    [new Date().toISOString()]
+  );
+
+  console.log(`[Sync:MTG] Complete: ${inserted} oracle cards stored`);
+  return inserted;
+}
+
 export async function syncCardsFromApi(
   db: SQLite.SQLiteDatabase,
   onProgress?: (current: number, total: number) => void,
@@ -816,6 +1088,7 @@ export async function syncCardsFromApi(
   console.log(`[Sync] Starting API sync for TCG=${tcg}...`);
   if (tcg === 'onepiece') return syncOnePiece(db, onProgress);
   if (tcg === 'yugioh') return syncYugioh(db, onProgress);
+  if (tcg === 'mtg') return syncMtg(db, onProgress);
   if (tcg === 'lorcana') return syncLorcana(db, onProgress);
   throw new Error(`Catalog sync for ${tcg} is not connected yet. The game workspace is available, but it will not use Lorcana data as a fallback.`);
 }
