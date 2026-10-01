@@ -69,7 +69,7 @@ export const TCG_PRESENTATION: Record<TCGId, TCGPresentation> = {
     showCommunityDecks: false,
     showScanner: false,
     showCardmarket: false,
-    showDotgg: false,
+    showDotgg: true,
   },
   yugioh: {
     colorLabel: 'Attribute',
