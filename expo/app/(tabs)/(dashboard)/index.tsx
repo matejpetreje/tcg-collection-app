@@ -452,9 +452,11 @@ export default function DashboardScreen() {
         return sorted.sort((a, b) => a.owned - b.owned);
       case 'release':
       default:
-        return sorted.sort((a, b) => getSetSortOrder(a.set_name) - getSetSortOrder(b.set_name));
+        return isLorcana
+          ? sorted.sort((a, b) => getSetSortOrder(a.set_name) - getSetSortOrder(b.set_name))
+          : sorted;
     }
-  }, [setProgress, setSortMode]);
+  }, [isLorcana, setProgress, setSortMode]);
 
   const SORT_OPTIONS: { key: SetSortMode; label: string }[] = [
     { key: 'release', label: 'Release' },
@@ -481,8 +483,10 @@ export default function DashboardScreen() {
               {currentTCG === 'yugioh'
                 ? 'Importing Yu-Gi-Oh! catalog from YGOPRODeck'
                 : currentTCG === 'onepiece'
-                  ? 'Importing One Piece catalog'
-                  : 'Downloading from lorcana-api.com'}
+                  ? 'Importing One Piece catalog from OPTCG API'
+                  : currentTCG === 'lorcana'
+                    ? 'Importing Lorcana catalog'
+                    : 'Catalog source is not connected yet'}
             </Text>
           </View>
         )}
@@ -907,7 +911,7 @@ export default function DashboardScreen() {
         </View>
         {sortedSetProgress.map((set) => {
           const pct = set.total > 0 ? Math.round((set.owned / set.total) * 100) : 0;
-          const setNum = getSetNumber(set.set_name);
+          const setNum = isLorcana ? getSetNumber(set.set_name) : null;
           return (
             <View key={set.set_code} style={styles.setRow}>
               <View style={styles.setInfo}>
