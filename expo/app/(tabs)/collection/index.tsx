@@ -476,13 +476,15 @@ export default function CollectionScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.searchRow}>
-        <TouchableOpacity
-          style={styles.scanBtn}
-          onPress={() => router.push('/scan-card')}
-          testID="scan-card-button"
-        >
-          <Camera size={18} color={Colors.primary} />
-        </TouchableOpacity>
+        {isLorcana && (
+          <TouchableOpacity
+            style={styles.scanBtn}
+            onPress={() => router.push('/scan-card')}
+            testID="scan-card-button"
+          >
+            <Camera size={18} color={Colors.primary} />
+          </TouchableOpacity>
+        )}
         <View style={styles.searchBox}>
           <Search size={18} color={Colors.textMuted} />
           <TextInput
