@@ -36,12 +36,20 @@ export default function StarterDeckContentsScreen() {
   const { tcg } = useTCG();
 
   const meta = getStarterDecks(tcg).find(d => d.id === deckId || d.setCode === (deckId ?? '').toUpperCase());
-  const isOnePiece = tcg === 'onepiece';
-
-  if (isOnePiece) {
+  if (tcg === 'onepiece') {
     return <OnePieceStarterDeckView deckId={deckId ?? ''} meta={meta} db={db} ready={isReady && hasCatalog} router={router} />;
   }
-  return <LorcanaStarterDeckView deckId={deckId ?? ''} meta={meta} db={db} ready={isReady && hasCatalog} router={router} />;
+  if (tcg === 'lorcana') {
+    return <LorcanaStarterDeckView deckId={deckId ?? ''} meta={meta} db={db} ready={isReady && hasCatalog} router={router} />;
+  }
+
+  return (
+    <EmptyState
+      icon={<Layers size={28} color={Colors.textMuted} />}
+      title="Starter Decks Not Available"
+      message="Starter deck data is not configured for this TCG."
+    />
+  );
 }
 
 // ---------- One Piece ----------
@@ -57,7 +65,7 @@ function OnePieceStarterDeckView({ deckId, meta, db, ready, router }: {
   const title = meta ? `${meta.set} ${meta.setNumber}: ${meta.name}` : setCode;
 
   const { data: cards, isLoading } = useQuery({
-    queryKey: ['starter-deck-cards', tcg, setCode, !!db],
+    queryKey: ['starter-deck-cards', 'onepiece', setCode, !!db],
     queryFn: async () => {
       if (!db || !setCode) return [];
       return safeQuery<DeckCardRow>(
