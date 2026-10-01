@@ -484,7 +484,13 @@ export default function DashboardScreen() {
         {isSyncing && (
           <View style={styles.syncInfo}>
             <Cloud size={16} color={Colors.textMuted} />
-            <Text style={styles.syncInfoText}>Downloading from lorcana-api.com</Text>
+            <Text style={styles.syncInfoText}>
+              {currentTCG === 'yugioh'
+                ? 'Importing Yu-Gi-Oh! catalog from YGOPRODeck'
+                : currentTCG === 'onepiece'
+                  ? 'Importing One Piece catalog'
+                  : 'Downloading from lorcana-api.com'}
+            </Text>
           </View>
         )}
       </View>
