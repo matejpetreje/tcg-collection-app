@@ -84,6 +84,19 @@ CREATE TABLE IF NOT EXISTS user_collection (
   FOREIGN KEY (card_id) REFERENCES cards(id)
 );
 
+CREATE TABLE IF NOT EXISTS card_printing_collection (
+  card_id INTEGER NOT NULL,
+  printing_key TEXT NOT NULL,
+  set_code TEXT NOT NULL,
+  set_name TEXT,
+  rarity TEXT,
+  qty INTEGER NOT NULL DEFAULT 0,
+  note TEXT,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (card_id, printing_key),
+  FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS decks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -173,6 +186,9 @@ CREATE TABLE IF NOT EXISTS cardmarket_prices (
 
 export const USER_INDEXES_SQL = `
 CREATE INDEX IF NOT EXISTS idx_collection_qty ON user_collection(qty, qty_foil, qty_enchanted);
+CREATE INDEX IF NOT EXISTS idx_printing_collection_card ON card_printing_collection(card_id);
+CREATE INDEX IF NOT EXISTS idx_printing_collection_set ON card_printing_collection(set_code);
+CREATE INDEX IF NOT EXISTS idx_printing_collection_qty ON card_printing_collection(qty);
 CREATE INDEX IF NOT EXISTS idx_deck_cards_deck ON deck_cards(deck_id);
 CREATE INDEX IF NOT EXISTS idx_deck_cards_card ON deck_cards(card_id);
 CREATE INDEX IF NOT EXISTS idx_game_history_deck ON game_history(deck_id);
@@ -205,6 +221,7 @@ DELETE FROM game_history;
 DELETE FROM deck_cards;
 DELETE FROM decks;
 DELETE FROM wishlist;
+DELETE FROM card_printing_collection;
 DELETE FROM user_collection;
 DELETE FROM import_log;
 DELETE FROM app_settings;
