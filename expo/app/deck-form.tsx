@@ -5,14 +5,16 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { useDatabase } from '@/providers/DatabaseProvider';
+import { useTCG } from '@/providers/TCGProvider';
+import { getTCGPresentation } from '@/tcg/presentation';
 import { safeRun } from '@/utils/database';
-
-const INK_OPTIONS = ['Amber', 'Amethyst', 'Emerald', 'Ruby', 'Sapphire', 'Steel'];
 
 export default function DeckFormScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { db } = useDatabase();
+  const { tcg } = useTCG();
+  const presentation = tcg ? getTCGPresentation(tcg) : null;
   const [name, setName] = useState<string>('');
   const [format, setFormat] = useState<string>('');
   const [note, setNote] = useState<string>('');
@@ -41,9 +43,12 @@ export default function DeckFormScreen() {
   });
 
   const toggleInk = (ink: string) => {
-    setSelectedInks(prev =>
-      prev.includes(ink) ? prev.filter(i => i !== ink) : [...prev, ink]
-    );
+    setSelectedInks(prev => {
+      if (prev.includes(ink)) return prev.filter(i => i !== ink);
+      const limit = presentation?.deckColorLimit ?? null;
+      if (limit !== null && prev.length >= limit) return prev;
+      return [...prev, ink];
+    });
   };
 
   return (
@@ -73,28 +78,35 @@ export default function DeckFormScreen() {
         />
       </View>
 
-      <View style={styles.field}>
-        <Text style={styles.label}>Ink Colors</Text>
-        <View style={styles.inkGrid}>
-          {INK_OPTIONS.map(ink => {
-            const isSelected = selectedInks.includes(ink);
-            const color = Colors.ink[ink] ?? Colors.textMuted;
-            return (
-              <TouchableOpacity
-                key={ink}
-                style={[
-                  styles.inkChip,
-                  isSelected && { backgroundColor: color + '30', borderColor: color },
-                ]}
-                onPress={() => toggleInk(ink)}
-              >
-                <View style={[styles.inkDot, { backgroundColor: color }]} />
-                <Text style={[styles.inkChipText, isSelected && { color }]}>{ink}</Text>
-              </TouchableOpacity>
-            );
-          })}
+      {(presentation?.deckColors.length ?? 0) > 0 && (
+        <View style={styles.field}>
+          <Text style={styles.label}>{presentation?.deckColorLabel ?? 'Colors'}</Text>
+          <View style={styles.inkGrid}>
+            {presentation?.deckColors.map(ink => {
+              const isSelected = selectedInks.includes(ink);
+              const color = Colors.ink[ink] ?? Colors.textMuted;
+              const atLimit = presentation.deckColorLimit !== null
+                && selectedInks.length >= presentation.deckColorLimit
+                && !isSelected;
+              return (
+                <TouchableOpacity
+                  key={ink}
+                  style={[
+                    styles.inkChip,
+                    isSelected && { backgroundColor: color + '30', borderColor: color },
+                    atLimit && { opacity: 0.45 },
+                  ]}
+                  onPress={() => toggleInk(ink)}
+                  disabled={atLimit}
+                >
+                  <View style={[styles.inkDot, { backgroundColor: color }]} />
+                  <Text style={[styles.inkChipText, isSelected && { color }]}>{ink}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
-      </View>
+      )}
 
       <View style={styles.field}>
         <Text style={styles.label}>Notes</Text>
