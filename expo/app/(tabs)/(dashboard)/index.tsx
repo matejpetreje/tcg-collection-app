@@ -167,14 +167,32 @@ export default function DashboardScreen() {
     queryFn: async () => {
       if (!db) return null;
       const totalCards = await safeQueryFirst<{ count: number }>(db, 'SELECT COUNT(*) as count FROM cards');
-      const ownedUnique = await safeQueryFirst<{ count: number }>(
-        db,
-        'SELECT COUNT(*) as count FROM user_collection WHERE (qty + qty_foil + qty_enchanted + qty_epic + qty_promo + qty_iconic + qty_play) > 0'
-      );
-      const totalCopies = await safeQueryFirst<{ total: number }>(
-        db,
-        'SELECT COALESCE(SUM(qty + qty_foil + qty_enchanted + qty_epic + qty_promo + qty_iconic + qty_play), 0) as total FROM user_collection'
-      );
+      const baseOwnedSql = '(qty + qty_foil + qty_enchanted + qty_epic + qty_promo + qty_iconic + qty_play)';
+      const ownedUnique = isYugioh
+        ? await safeQueryFirst<{ count: number }>(
+            db,
+            `SELECT COUNT(DISTINCT card_id) as count
+             FROM (
+               SELECT card_id FROM user_collection WHERE ${baseOwnedSql} > 0
+               UNION ALL
+               SELECT card_id FROM card_printing_collection WHERE qty > 0
+             )`
+          )
+        : await safeQueryFirst<{ count: number }>(
+            db,
+            `SELECT COUNT(*) as count FROM user_collection WHERE ${baseOwnedSql} > 0`
+          );
+      const totalCopies = isYugioh
+        ? await safeQueryFirst<{ total: number }>(
+            db,
+            `SELECT
+               COALESCE((SELECT SUM(${baseOwnedSql}) FROM user_collection), 0)
+               + COALESCE((SELECT SUM(qty) FROM card_printing_collection WHERE qty > 0), 0) as total`
+          )
+        : await safeQueryFirst<{ total: number }>(
+            db,
+            `SELECT COALESCE(SUM(${baseOwnedSql}), 0) as total FROM user_collection`
+          );
       const deckCount = await safeQueryFirst<{ count: number }>(db, 'SELECT COUNT(*) as count FROM decks');
 
       let gameStats = { total: 0, wins: 0, losses: 0, winRate: 0 };
@@ -211,6 +229,30 @@ export default function DashboardScreen() {
     queryKey: ['dashboard-ink-dist', currentTCG, !!db, hasCatalog],
     queryFn: async () => {
       if (!db) return [];
+      if (isYugioh) {
+        return safeQuery<InkDistItem>(
+          db,
+          `WITH owned AS (
+             SELECT card_id, SUM(qty) as qty
+             FROM (
+               SELECT card_id, (qty + qty_foil + qty_enchanted + qty_epic + qty_promo + qty_iconic + qty_play) as qty
+               FROM user_collection
+               WHERE (qty + qty_foil + qty_enchanted + qty_epic + qty_promo + qty_iconic + qty_play) > 0
+               UNION ALL
+               SELECT card_id, qty FROM card_printing_collection WHERE qty > 0
+             )
+             GROUP BY card_id
+           )
+           SELECT c.ink_color,
+                  COUNT(DISTINCT c.id) as unique_count,
+                  COALESCE(SUM(owned.qty), 0) as total_count
+           FROM owned
+           JOIN cards c ON c.id = owned.card_id
+           WHERE c.ink_color IS NOT NULL
+           GROUP BY c.ink_color
+           ORDER BY unique_count DESC`
+        );
+      }
       return safeQuery<InkDistItem>(
         db,
         `SELECT c.ink_color,
@@ -327,6 +369,20 @@ export default function DashboardScreen() {
     queryKey: ['dashboard-rarity-dist', currentTCG, !!db, hasCatalog],
     queryFn: async () => {
       if (!db) return [];
+      if (isYugioh) {
+        const printRows = await safeQuery<RarityDistItem>(
+          db,
+          `SELECT rarity,
+                  COUNT(DISTINCT card_id) as unique_count,
+                  COALESCE(SUM(qty), 0) as total_count
+           FROM card_printing_collection
+           WHERE qty > 0 AND rarity IS NOT NULL AND rarity != ''
+           GROUP BY rarity
+           ORDER BY rarity ASC`
+        );
+        return printRows;
+      }
+
       const rows = await safeQuery<RarityDistItem>(
         db,
         `SELECT c.rarity,
@@ -407,17 +463,39 @@ export default function DashboardScreen() {
     queryKey: ['dashboard-type-dist', currentTCG, !!db, hasCatalog],
     queryFn: async () => {
       if (!db) return [];
-      const rows = await safeQuery<TypeDistItem>(
-        db,
-        `SELECT c.type,
-                COUNT(DISTINCT c.id) as unique_count,
-                COALESCE(SUM(uc.qty + uc.qty_foil + uc.qty_enchanted + uc.qty_epic + uc.qty_promo + uc.qty_iconic + uc.qty_play), 0) as total_count
-         FROM user_collection uc
-         JOIN cards c ON c.id = uc.card_id
-         WHERE (uc.qty + uc.qty_foil + uc.qty_enchanted + uc.qty_epic + uc.qty_promo + uc.qty_iconic + uc.qty_play) > 0
-         AND c.type IS NOT NULL
-         GROUP BY c.type`
-      );
+      const rows = isYugioh
+        ? await safeQuery<TypeDistItem>(
+            db,
+            `WITH owned AS (
+               SELECT card_id, SUM(qty) as qty
+               FROM (
+                 SELECT card_id, (qty + qty_foil + qty_enchanted + qty_epic + qty_promo + qty_iconic + qty_play) as qty
+                 FROM user_collection
+                 WHERE (qty + qty_foil + qty_enchanted + qty_epic + qty_promo + qty_iconic + qty_play) > 0
+                 UNION ALL
+                 SELECT card_id, qty FROM card_printing_collection WHERE qty > 0
+               )
+               GROUP BY card_id
+             )
+             SELECT c.type,
+                    COUNT(DISTINCT c.id) as unique_count,
+                    COALESCE(SUM(owned.qty), 0) as total_count
+             FROM owned
+             JOIN cards c ON c.id = owned.card_id
+             WHERE c.type IS NOT NULL
+             GROUP BY c.type`
+          )
+        : await safeQuery<TypeDistItem>(
+            db,
+            `SELECT c.type,
+                    COUNT(DISTINCT c.id) as unique_count,
+                    COALESCE(SUM(uc.qty + uc.qty_foil + uc.qty_enchanted + uc.qty_epic + uc.qty_promo + uc.qty_iconic + uc.qty_play), 0) as total_count
+             FROM user_collection uc
+             JOIN cards c ON c.id = uc.card_id
+             WHERE (uc.qty + uc.qty_foil + uc.qty_enchanted + uc.qty_epic + uc.qty_promo + uc.qty_iconic + uc.qty_play) > 0
+             AND c.type IS NOT NULL
+             GROUP BY c.type`
+          );
       const order = presentation?.cardTypes ?? TYPE_ORDER;
       const orderMap = new Map(order.map((v, i) => [v, i]));
       return rows.sort((a, b) => (orderMap.get(a.type) ?? 999) - (orderMap.get(b.type) ?? 999));
@@ -894,7 +972,7 @@ export default function DashboardScreen() {
   };
 
   const renderSetProgress = (sectionIdx: number) => {
-    if ((setProgress?.length ?? 0) === 0) return null;
+    if (isYugioh || (setProgress?.length ?? 0) === 0) return null;
     return (
       <View key="set_progress" style={[styles.section, reorderMode && styles.sectionReorder]}>
         <View style={styles.sectionHeaderRow}>
