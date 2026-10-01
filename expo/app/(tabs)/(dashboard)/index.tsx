@@ -629,9 +629,11 @@ export default function DashboardScreen() {
                 ? 'Importing Yu-Gi-Oh! catalog from YGOPRODeck'
                 : currentTCG === 'onepiece'
                   ? 'Importing One Piece catalog from OPTCG API'
-                  : currentTCG === 'lorcana'
-                    ? 'Importing Lorcana catalog'
-                    : 'Catalog source is not connected yet'}
+                  : currentTCG === 'mtg'
+                    ? 'Importing Magic: The Gathering catalog from Scryfall'
+                    : currentTCG === 'lorcana'
+                      ? 'Importing Lorcana catalog'
+                      : 'Catalog source is not connected yet'}
             </Text>
           </View>
         )}
