@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
-  View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Modal, ScrollView, useWindowDimensions,
+  View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Modal, ScrollView, useWindowDimensions, NativeSyntheticEvent, NativeScrollEvent,
 } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -301,8 +301,18 @@ export default function CollectionScreen() {
   const visibleCards = useMemo(() => (cards ?? []).slice(0, visibleLimit), [cards, visibleLimit]);
 
   const handleLoadMore = useCallback(() => {
-    setVisibleLimit(prev => Math.min(prev + PAGE_SIZE, cards?.length ?? prev));
+    const total = cards?.length ?? 0;
+    if (total === 0) return;
+    setVisibleLimit(prev => Math.min(prev + PAGE_SIZE, total));
   }, [cards?.length]);
+
+  const handleCollectionScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+    const distanceFromBottom = contentSize.height - (layoutMeasurement.height + contentOffset.y);
+    if (distanceFromBottom <= Math.max(240, layoutMeasurement.height * 0.35)) {
+      handleLoadMore();
+    }
+  }, [handleLoadMore]);
 
   const renderCard = useCallback(({ item }: { item: CardWithDetails }) => (
     <CardListItem card={item} showQuickAdd={!editLocked} />
@@ -568,7 +578,17 @@ export default function CollectionScreen() {
         columnWrapperStyle={isGrid && gridColumns > 1 ? styles.gridRow : undefined}
         ItemSeparatorComponent={!isGrid ? () => <View style={{ height: 8 }} /> : undefined}
         onEndReached={handleLoadMore}
-        onEndReachedThreshold={0.25}
+        onEndReachedThreshold={0.5}
+        onScroll={handleCollectionScroll}
+        scrollEventThrottle={100}
+        ListFooterComponent={
+          visibleLimit < (cards?.length ?? 0) ? (
+            <View style={styles.loadMoreFooter}>
+              <ActivityIndicator size="small" color={Colors.primary} />
+              <Text style={styles.loadMoreText}>Loading more cards…</Text>
+            </View>
+          ) : null
+        }
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           isLoading ? (
@@ -761,6 +781,16 @@ const filterStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
+  loadMoreFooter: {
+    paddingVertical: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  loadMoreText: {
+    color: Colors.textMuted,
+    fontSize: 12,
+  },
   container: {
     flex: 1,
     backgroundColor: Colors.background,
