@@ -88,7 +88,7 @@ export default function CollectionScreen() {
       sql = 'SELECT COUNT(DISTINCT c.card_number) as count';
     } else {
       sql = `SELECT DISTINCT c.id, c.name, c.version, c.ink_color, c.cost, c.rarity, c.type, c.set_code,
-                c.card_number, c.strength, c.willpower, c.lore, c.inkable, c.market_price, c.inventory_price,
+                c.card_number, c.strength, c.willpower, c.lore, c.inkable, c.market_price, c.inventory_price, c.game_data,
                 COALESCE(uc.qty, 0) as qty, COALESCE(uc.qty_foil, 0) as qty_foil,
                 COALESCE(uc.qty_enchanted, 0) as qty_enchanted,
                 COALESCE(uc.qty_epic, 0) as qty_epic, COALESCE(uc.qty_promo, 0) as qty_promo,
