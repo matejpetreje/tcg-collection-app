@@ -62,7 +62,7 @@ export const TCG_PRESENTATION: Record<TCGId, TCGPresentation> = {
     cardTypes: ['Leader', 'Character', 'Event', 'Stage', 'DON!!'],
     showInkability: false,
     variants: STANDARD_ONLY,
-    showStarterDecks: false,
+    showStarterDecks: true,
     showCommunityDecks: false,
     showScanner: false,
     showCardmarket: false,
