@@ -1,7 +1,7 @@
 import React, { useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Droplets, DropletOff, Plus } from 'lucide-react-native';
+import { Droplets, DropletOff, Minus, Plus } from 'lucide-react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
@@ -47,6 +47,26 @@ function CardListItemComponent({ card, showQuickAdd = true }: CardListItemProps)
       console.log('[CardListItem] Quick add error:', e);
     }
   }, [db, card.id, card.name, queryClient]);
+
+  const handleQuickRemove = useCallback(async () => {
+    if (!db || card.qty <= 0) return;
+    try {
+      await safeRun(
+        db,
+        `UPDATE user_collection
+         SET qty = MAX(qty - 1, 0), updated_at = datetime('now')
+         WHERE card_id = ?`,
+        [card.id]
+      );
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      void queryClient.invalidateQueries({ queryKey: ['collection'] });
+      void queryClient.invalidateQueries({ queryKey: ['collection-count'] });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      console.log('[CardListItem] Quick removed classic card:', card.id, card.name);
+    } catch (e) {
+      console.log('[CardListItem] Quick remove error:', e);
+    }
+  }, [db, card.id, card.name, card.qty, queryClient]);
 
   const inkColor = Colors.ink[card.ink_color ?? ''] ?? Colors.textSecondary;
   const rarityColor = Colors.rarity[card.rarity ?? ''] ?? Colors.textSecondary;
@@ -134,16 +154,29 @@ function CardListItemComponent({ card, showQuickAdd = true }: CardListItemProps)
       </View>
       <View style={styles.rightColumn}>
         {showQuickAdd ? (
-          <TouchableOpacity
-            style={styles.quickAddBtn}
-            onPress={handleQuickAdd}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            testID={`quick-add-${card.id}`}
-          >
-            <Plus size={14} color={Colors.primary} />
-          </TouchableOpacity>
-        ) : null}
-        {totalOwned > 0 ? (
+          <View style={styles.quickEditRow}>
+            <TouchableOpacity
+              style={[styles.quickEditBtn, card.qty <= 0 && styles.quickEditBtnDisabled]}
+              onPress={handleQuickRemove}
+              disabled={card.qty <= 0}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
+              testID={`quick-remove-${card.id}`}
+            >
+              <Minus size={13} color={card.qty <= 0 ? Colors.textMuted : Colors.text} />
+            </TouchableOpacity>
+            <View style={styles.quickQtyBadge}>
+              <Text style={styles.quickQtyText}>{card.qty}</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.quickEditBtn}
+              onPress={handleQuickAdd}
+              hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
+              testID={`quick-add-${card.id}`}
+            >
+              <Plus size={13} color={Colors.primary} />
+            </TouchableOpacity>
+          </View>
+        ) : totalOwned > 0 ? (
           <View style={styles.ownedBadge}>
             <Text style={styles.ownedText}>{totalOwned}</Text>
           </View>
@@ -284,7 +317,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
-  quickAddBtn: {
+  quickEditRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  quickEditBtn: {
     width: 28,
     height: 28,
     borderRadius: 8,
@@ -293,6 +331,25 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary + '30',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  quickEditBtnDisabled: {
+    opacity: 0.4,
+  },
+  quickQtyBadge: {
+    minWidth: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: Colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 5,
+  },
+  quickQtyText: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: Colors.text,
   },
   ownedBadge: {
     minWidth: 28,
