@@ -6,6 +6,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { getSetNumber } from '@/constants/sets';
+import { getCardFoundation } from '@/constants/tcg-card-foundations';
 import { useDatabase } from '@/providers/DatabaseProvider';
 import { useTCG } from '@/providers/TCGProvider';
 import { safeRun } from '@/utils/database';
@@ -23,6 +24,7 @@ function CardListItemComponent({ card, showQuickAdd = true }: CardListItemProps)
   const queryClient = useQueryClient();
   const { tcg } = useTCG();
   const isOnePiece = tcg === 'onepiece';
+  const gameStats = tcg === 'lorcana' ? [] : getCardFoundation(tcg).getDisplayStats(card);
 
   const handlePress = useCallback(() => {
     router.push(`/card/${card.id}`);
@@ -113,30 +115,19 @@ function CardListItemComponent({ card, showQuickAdd = true }: CardListItemProps)
           ) : null}
         </View>
         <View style={styles.statsRow}>
-          {card.cost !== null && card.cost !== undefined ? (
-            <View style={styles.statBadge}>
-              <Text style={styles.statLabel}>Cost</Text>
-              <Text style={styles.statText}>{card.cost}</Text>
+          {tcg === 'lorcana' ? (
+            <>
+              {card.cost !== null && card.cost !== undefined ? <View style={styles.statBadge}><Text style={styles.statLabel}>Cost</Text><Text style={styles.statText}>{card.cost}</Text></View> : null}
+              {card.strength !== null && card.strength !== undefined ? <View style={styles.statBadge}><Text style={styles.statLabel}>Str</Text><Text style={styles.statText}>{card.strength}</Text></View> : null}
+              {card.willpower !== null && card.willpower !== undefined ? <View style={styles.statBadge}><Text style={styles.statLabel}>Wil</Text><Text style={styles.statText}>{card.willpower}</Text></View> : null}
+              {card.lore !== null && card.lore !== undefined ? <View style={styles.statBadge}><Text style={[styles.statLabel, { color: Colors.accent }]}>Lore</Text><Text style={[styles.statText, { color: Colors.accent }]}>{card.lore}</Text></View> : null}
+            </>
+          ) : gameStats.map(stat => (
+            <View style={styles.statBadge} key={stat.key}>
+              <Text style={styles.statLabel}>{stat.label}</Text>
+              <Text style={styles.statText}>{stat.value}</Text>
             </View>
-          ) : null}
-          {card.strength !== null && card.strength !== undefined ? (
-            <View style={styles.statBadge}>
-              <Text style={styles.statLabel}>{isOnePiece ? 'Atk' : 'Str'}</Text>
-              <Text style={styles.statText}>{card.strength}</Text>
-            </View>
-          ) : null}
-          {card.willpower !== null && card.willpower !== undefined ? (
-            <View style={styles.statBadge}>
-              <Text style={styles.statLabel}>{isOnePiece ? 'Count' : 'Wil'}</Text>
-              <Text style={styles.statText}>{card.willpower}</Text>
-            </View>
-          ) : null}
-          {card.lore !== null && card.lore !== undefined ? (
-            <View style={styles.statBadge}>
-              <Text style={[styles.statLabel, { color: Colors.accent }]}>{isOnePiece ? 'Life' : 'Lore'}</Text>
-              <Text style={[styles.statText, { color: Colors.accent }]}>{card.lore}</Text>
-            </View>
-          ) : null}
+          ))}
         </View>
         <View style={styles.setRow}>
           {card.card_number ? (
