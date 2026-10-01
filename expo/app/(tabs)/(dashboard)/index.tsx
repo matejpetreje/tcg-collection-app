@@ -418,7 +418,7 @@ export default function DashboardScreen() {
          AND c.type IS NOT NULL
          GROUP BY c.type`
       );
-      const order = isOnePiece ? ONEPIECE_TYPE_ORDER : isYugioh ? ['Monster', 'Spell', 'Trap'] : TYPE_ORDER;
+      const order = presentation?.cardTypes ?? TYPE_ORDER;
       const orderMap = new Map(order.map((v, i) => [v, i]));
       return rows.sort((a, b) => (orderMap.get(a.type) ?? 999) - (orderMap.get(b.type) ?? 999));
     },
@@ -675,7 +675,7 @@ export default function DashboardScreen() {
         <View style={styles.sectionHeaderRow}>
           <View style={styles.sectionHeader}>
             <Palette size={18} color={Colors.primary} />
-            <Text style={styles.sectionTitle}>{isOnePiece ? 'Color Distribution' : isYugioh ? 'Attribute Distribution' : 'Ink Distribution'}</Text>
+            <Text style={styles.sectionTitle}>{presentation?.colorLabel ? `${presentation.colorLabel} Distribution` : 'Distribution'}</Text>
           </View>
           <View style={styles.sectionHeaderRight}>
             {renderDistToggle(inkDistMode, setInkDistMode)}
