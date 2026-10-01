@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Modal, ScrollView, useWindowDimensions,
 } from 'react-native';
@@ -47,6 +47,7 @@ export default function CollectionScreen() {
   const { db, isReady, hasCatalog } = useDatabase();
   const { tcg } = useTCG();
   const isOnePiece = tcg === 'onepiece';
+  const isLorcana = tcg === 'lorcana';
   const [filters, setFilters] = useState<CollectionFilters>({
     search: '',
     inkColors: [],
@@ -60,7 +61,7 @@ export default function CollectionScreen() {
     counters: [],
     lives: [],
   });
-  const [page, setPage] = useState<number>(0);
+  const [visibleLimit, setVisibleLimit] = useState<number>(PAGE_SIZE);
   const [showFilters, setShowFilters] = useState<boolean>(false);
   const [editLocked, setEditLocked] = useState<boolean>(true);
   const [viewMode, setViewMode] = useState<CollectionView>('grid-detailed');
@@ -187,17 +188,18 @@ export default function CollectionScreen() {
     }
 
     if (mode === 'list') {
-      sql += ` ORDER BY c.name ASC LIMIT ? OFFSET ?`;
-      params.push(PAGE_SIZE, page * PAGE_SIZE);
+      sql += isOnePiece
+        ? ` ORDER BY CASE WHEN s.release_date IS NULL THEN 1 ELSE 0 END, s.release_date DESC, c.set_code DESC, c.card_number ASC, c.name ASC`
+        : ` ORDER BY c.name ASC`;
     }
 
     return { sql, params };
-  }, [filters, page, isOnePiece]);
+  }, [filters, isOnePiece]);
 
   const queryClient = useQueryClient();
 
   const { data: cards, isLoading } = useQuery({
-    queryKey: ['collection', filters, page, !!db],
+    queryKey: ['collection', filters, !!db],
     queryFn: async () => {
       if (!db) return [];
       const { sql, params } = buildQuery('list');
@@ -268,7 +270,7 @@ export default function CollectionScreen() {
 
   const handleSearch = useCallback((text: string) => {
     setFilters(prev => ({ ...prev, search: text }));
-    setPage(0);
+    setVisibleLimit(PAGE_SIZE);
   }, []);
 
   const toggleFilterItem = useCallback((key: keyof CollectionFilters, item: string) => {
@@ -277,7 +279,7 @@ export default function CollectionScreen() {
       const newArr = arr.includes(item) ? arr.filter(i => i !== item) : [...arr, item];
       return { ...prev, [key]: newArr };
     });
-    setPage(0);
+    setVisibleLimit(PAGE_SIZE);
   }, []);
 
   const toggleStatFilter = useCallback((key: 'strengths' | 'counters' | 'lives', value: number) => {
@@ -286,7 +288,7 @@ export default function CollectionScreen() {
       const newArr = arr.includes(value) ? arr.filter(v => v !== value) : [...arr, value];
       return { ...prev, [key]: newArr };
     });
-    setPage(0);
+    setVisibleLimit(PAGE_SIZE);
   }, []);
 
   const hasActiveFilters = useMemo(() => {
@@ -296,10 +298,10 @@ export default function CollectionScreen() {
       filters.strengths.length > 0 || filters.counters.length > 0 || filters.lives.length > 0;
   }, [filters, isOnePiece]);
 
+  const visibleCards = useMemo(() => (cards ?? []).slice(0, visibleLimit), [cards, visibleLimit]);
+
   const handleLoadMore = useCallback(() => {
-    if ((cards?.length ?? 0) >= PAGE_SIZE) {
-      setPage(prev => prev + 1);
-    }
+    setVisibleLimit(prev => Math.min(prev + PAGE_SIZE, cards?.length ?? prev));
   }, [cards?.length]);
 
   const renderCard = useCallback(({ item }: { item: CardWithDetails }) => (
@@ -490,7 +492,7 @@ export default function CollectionScreen() {
           style={[styles.toggleChip, filters.onlyOwned && styles.toggleChipActive]}
           onPress={() => {
             setFilters(prev => ({ ...prev, onlyOwned: !prev.onlyOwned, onlyMissing: false }));
-            setPage(0);
+            setVisibleLimit(PAGE_SIZE);
           }}
         >
           <Text style={[styles.toggleChipText, filters.onlyOwned && styles.toggleChipTextActive]}>Owned</Text>
@@ -499,7 +501,7 @@ export default function CollectionScreen() {
           style={[styles.toggleChip, filters.onlyMissing && styles.toggleChipActive]}
           onPress={() => {
             setFilters(prev => ({ ...prev, onlyMissing: !prev.onlyMissing, onlyOwned: false }));
-            setPage(0);
+            setVisibleLimit(PAGE_SIZE);
           }}
         >
           <Text style={[styles.toggleChipText, filters.onlyMissing && styles.toggleChipTextActive]}>Missing</Text>
@@ -556,8 +558,9 @@ export default function CollectionScreen() {
       </View>
 
       <FlatList
+        maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
         key={isGrid ? `grid-${gridColumns}-${viewMode}` : 'list'}
-        data={cards}
+        data={visibleCards}
         renderItem={isGrid ? renderGridCard : renderCard}
         keyExtractor={keyExtractor}
         numColumns={isGrid ? gridColumns : 1}
@@ -565,7 +568,7 @@ export default function CollectionScreen() {
         columnWrapperStyle={isGrid && gridColumns > 1 ? styles.gridRow : undefined}
         ItemSeparatorComponent={!isGrid ? () => <View style={{ height: 8 }} /> : undefined}
         onEndReached={handleLoadMore}
-        onEndReachedThreshold={0.5}
+        onEndReachedThreshold={0.25}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           isLoading ? (
@@ -592,7 +595,7 @@ export default function CollectionScreen() {
             </View>
             <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
               <FilterSection
-                title="Ink Color"
+                title={isOnePiece ? "Color" : "Ink Color"
                 items={filterOptions?.inks ?? []}
                 selected={filters.inkColors}
                 onToggle={(item) => toggleFilterItem('inkColors', item)}
@@ -631,7 +634,7 @@ export default function CollectionScreen() {
               {isOnePiece && (
                 <>
                   <FilterSection
-                    title="Attack"
+                    title="Power"
                     items={(filterOptions?.strengths ?? []).map(String)}
                     selected={filters.strengths.map(String)}
                     onToggle={(item) => toggleStatFilter('strengths', Number(item))}
@@ -662,7 +665,7 @@ export default function CollectionScreen() {
                 style={styles.clearBtn}
                 onPress={() => {
                   setFilters(prev => ({ ...prev, inkColors: [], cardTypes: [], rarities: [], setCodes: [], variantTypes: [], strengths: [], counters: [], lives: [] }));
-                  setPage(0);
+                  setVisibleLimit(PAGE_SIZE);
                 }}
               >
                 <Text style={styles.clearBtnText}>Clear All</Text>
