@@ -26,7 +26,7 @@ export default function AddCardScreen() {
   const deckIdNum = parseInt(deckId ?? '0', 10);
 
   const { data: deckInkColors } = useQuery({
-    queryKey: ['deck-ink-colors', deckIdNum, !!db],
+    queryKey: ['deck-ink-colors', tcg, deckIdNum, !!db],
     queryFn: async () => {
       if (!db) return [];
       const result = await safeQuery<InkStats>(
@@ -45,7 +45,7 @@ export default function AddCardScreen() {
   });
 
   const { data: otherDeckCards } = useQuery({
-    queryKey: ['other-deck-cards', deckIdNum, !!db],
+    queryKey: ['other-deck-cards', tcg, deckIdNum, !!db],
     queryFn: async () => {
       if (!db) return new Map<number, string[]>();
       const result = await safeQuery<{ card_id: number; deck_name: string }>(
@@ -143,9 +143,9 @@ export default function AddCardScreen() {
         next.set(cardId, (next.get(cardId) ?? 0) + 1);
         return next;
       });
-      void queryClient.invalidateQueries({ queryKey: ['deck-cards', deckIdNum] });
-      void queryClient.invalidateQueries({ queryKey: ['deck-stats', deckIdNum] });
-      void queryClient.invalidateQueries({ queryKey: ['deck-ink-colors', deckIdNum] });
+      void queryClient.invalidateQueries({ queryKey: ['deck-cards', tcg, deckIdNum] });
+      void queryClient.invalidateQueries({ queryKey: ['deck-stats', tcg, deckIdNum] });
+      void queryClient.invalidateQueries({ queryKey: ['deck-ink-colors', tcg, deckIdNum] });
       void queryClient.invalidateQueries({ queryKey: ['decks'] });
     },
   });
