@@ -881,7 +881,6 @@ async function syncMtg(
         const manaValue = card.mana_value ?? null;
         const numericCost = manaValue != null && Number.isInteger(manaValue) ? manaValue : null;
         const colorLabel = mtgColorLabel(card.color_identity.length > 0 ? card.color_identity : card.colors);
-        const representativePrinting = card.printings?.[0] ?? null;
 
         await txn.runAsync(
           `INSERT INTO cards (name, version, cost, ink_color, type, rarity, set_code, card_number,
@@ -982,27 +981,6 @@ async function syncMtg(
               [cardId, subtype]
             );
           }
-        }
-
-        if (cardId && representativePrinting?.collector_number) {
-          await txn.runAsync(
-            `INSERT INTO card_printing_collection
-              (card_id, printing_key, set_code, set_name, rarity, qty, updated_at)
-             SELECT ?, ?, ?, ?, ?, 0, datetime('now')
-             WHERE NOT EXISTS (
-               SELECT 1 FROM card_printing_collection
-               WHERE card_id = ? AND printing_key = ?
-             )`,
-            [
-              cardId,
-              representativePrinting.scryfall_id,
-              representativePrinting.set_code,
-              representativePrinting.set_name,
-              representativePrinting.rarity,
-              cardId,
-              representativePrinting.scryfall_id,
-            ]
-          );
         }
 
         inserted++;
