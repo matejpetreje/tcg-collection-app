@@ -102,6 +102,9 @@ async function migrateSchema(db: SQLite.SQLiteDatabase): Promise<void> {
     } catch {}
   }
 
+  try { await db.execAsync('ALTER TABLE cards ADD COLUMN market_price REAL;'); } catch {}
+  try { await db.execAsync('ALTER TABLE cards ADD COLUMN inventory_price REAL;'); } catch {}
+
   try {
     await db.execAsync(`CREATE TABLE IF NOT EXISTS purchased_starter_decks (
       id TEXT PRIMARY KEY,
@@ -490,15 +493,16 @@ async function syncOnePiece(
         await txn.runAsync(
           `INSERT INTO cards (name, version, cost, ink_color, type, rarity, set_code, card_number,
             body_text, flavor_text, strength, willpower, lore, move_cost, inkable, unique_id,
-            classifications, franchise, date_added, date_modified)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            classifications, franchise, date_added, date_modified, market_price, inventory_price)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(unique_id) DO UPDATE SET
              name = excluded.name, cost = excluded.cost, ink_color = excluded.ink_color,
              type = excluded.type, rarity = excluded.rarity, set_code = excluded.set_code,
              card_number = excluded.card_number, body_text = excluded.body_text,
              flavor_text = excluded.flavor_text, strength = excluded.strength,
              willpower = excluded.willpower, lore = excluded.lore, classifications = excluded.classifications,
-             franchise = excluded.franchise`,
+             franchise = excluded.franchise, market_price = excluded.market_price,
+             inventory_price = excluded.inventory_price`,
           [
             c.name ?? '',
             null,
@@ -520,6 +524,8 @@ async function syncOnePiece(
             c.attribute?.name ?? null,
             null,
             null,
+            c.marketPrice ?? null,
+            c.inventoryPrice ?? null,
           ]
         );
 
