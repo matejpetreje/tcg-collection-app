@@ -1,15 +1,17 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import {
-  View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Modal, ScrollView,
+  View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Modal, ScrollView, useWindowDimensions,
 } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { Search, SlidersHorizontal, X, Check, Library, Camera, Lock, Unlock } from 'lucide-react-native';
+import { Search, SlidersHorizontal, X, Check, Library, Camera, Lock, Unlock, List, Grid3X3, Minus, Plus } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useDatabase } from '@/providers/DatabaseProvider';
 import { useTCG } from '@/providers/TCGProvider';
-import { safeQuery } from '@/utils/database';
+import { safeQuery, safeRun } from '@/utils/database';
 import CardListItem from '@/components/CardListItem';
+import CardImage from '@/components/CardImage';
+import * as Haptics from 'expo-haptics';
 import EmptyState from '@/components/EmptyState';
 import type { CardWithDetails, CollectionFilters } from '@/types/database';
 
@@ -36,6 +38,7 @@ function sortByOrder(items: string[], order: string[]): string[] {
 
 export default function CollectionScreen() {
   const router = useRouter();
+  const { width: windowWidth } = useWindowDimensions();
   const { db, isReady, hasCatalog } = useDatabase();
   const { tcg } = useTCG();
   const isOnePiece = tcg === 'onepiece';
@@ -55,6 +58,8 @@ export default function CollectionScreen() {
   const [page, setPage] = useState<number>(0);
   const [showFilters, setShowFilters] = useState<boolean>(false);
   const [editLocked, setEditLocked] = useState<boolean>(true);
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [gridSize, setGridSize] = useState<'small' | 'medium' | 'large'>('medium');
 
   const buildQuery = useCallback((mode: 'list' | 'count' | 'totalCopies') => {
     let sql: string;
@@ -159,6 +164,8 @@ export default function CollectionScreen() {
 
     return { sql, params };
   }, [filters, page, isOnePiece]);
+
+  const queryClient = useQueryClient();
 
   const { data: cards, isLoading } = useQuery({
     queryKey: ['collection', filters, page, !!db],
@@ -270,6 +277,103 @@ export default function CollectionScreen() {
     <CardListItem card={item} showQuickAdd={!editLocked} />
   ), [editLocked]);
 
+  const updateClassicQty = useCallback(async (card: CardWithDetails, delta: 1 | -1) => {
+    if (!db || (delta < 0 && card.qty <= 0)) return;
+    try {
+      if (delta > 0) {
+        await safeRun(
+          db,
+          `INSERT INTO user_collection (card_id, qty, qty_foil, qty_enchanted, qty_epic, qty_promo, qty_iconic, qty_play, updated_at)
+           VALUES (?, 1, 0, 0, 0, 0, 0, 0, datetime('now'))
+           ON CONFLICT(card_id) DO UPDATE SET qty = qty + 1, updated_at = datetime('now')`,
+          [card.id]
+        );
+      } else {
+        await safeRun(
+          db,
+          `UPDATE user_collection
+           SET qty = MAX(qty - 1, 0), updated_at = datetime('now')
+           WHERE card_id = ?`,
+          [card.id]
+        );
+      }
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      void queryClient.invalidateQueries({ queryKey: ['collection'] });
+      void queryClient.invalidateQueries({ queryKey: ['collection-count'] });
+      void queryClient.invalidateQueries({ queryKey: ['collection-total-copies'] });
+      void queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+    } catch (e) {
+      console.log('[Collection] Grid quantity update error:', e);
+    }
+  }, [db, queryClient]);
+
+  const gridCardWidth = useMemo(() => {
+    const target = gridSize === 'small' ? 135 : gridSize === 'large' ? 230 : 180;
+    const available = Math.max(windowWidth - 32, target);
+    const columns = Math.max(1, Math.floor((available + 12) / (target + 12)));
+    return Math.floor((available - (columns - 1) * 12) / columns);
+  }, [gridSize, windowWidth]);
+
+  const gridColumns = useMemo(() => {
+    const available = Math.max(windowWidth - 32, gridCardWidth);
+    return Math.max(1, Math.floor((available + 12) / (gridCardWidth + 12)));
+  }, [windowWidth, gridCardWidth]);
+
+  const renderGridCard = useCallback(({ item }: { item: CardWithDetails }) => {
+    const imageHeight = Math.round(gridCardWidth * 1.4);
+    return (
+      <TouchableOpacity
+        style={[styles.gridCard, { width: gridCardWidth }]}
+        onPress={() => router.push(`/card/${item.id}`)}
+        activeOpacity={0.8}
+      >
+        <CardImage
+          cardId={item.id}
+          imageUrl={item.image_url}
+          thumbnailUrl={item.thumbnail_url}
+          size="large"
+          style={{ width: gridCardWidth, height: imageHeight }}
+        />
+        <View style={styles.gridInfo}>
+          <Text style={styles.gridName} numberOfLines={1}>{item.name}</Text>
+          <Text style={styles.gridMeta} numberOfLines={1}>
+            {item.set_code ?? ''}{item.card_number ? ` · #${item.card_number}` : ''}
+          </Text>
+          {!editLocked ? (
+            <View style={styles.gridQtyRow}>
+              <TouchableOpacity
+                style={[styles.gridQtyBtn, item.qty <= 0 && styles.gridQtyBtnDisabled]}
+                onPress={(event) => {
+                  event.stopPropagation();
+                  void updateClassicQty(item, -1);
+                }}
+                disabled={item.qty <= 0}
+              >
+                <Minus size={14} color={item.qty <= 0 ? Colors.textMuted : Colors.text} />
+              </TouchableOpacity>
+              <View style={styles.gridQtyValue}>
+                <Text style={styles.gridQtyText}>{item.qty}</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.gridQtyBtn}
+                onPress={(event) => {
+                  event.stopPropagation();
+                  void updateClassicQty(item, 1);
+                }}
+              >
+                <Plus size={14} color={Colors.primary} />
+              </TouchableOpacity>
+            </View>
+          ) : (item.total_owned ?? 0) > 0 ? (
+            <View style={styles.gridOwnedBadge}>
+              <Text style={styles.gridOwnedText}>{item.total_owned}</Text>
+            </View>
+          ) : null}
+        </View>
+      </TouchableOpacity>
+    );
+  }, [editLocked, gridCardWidth, router, updateClassicQty]);
+
   const keyExtractor = useCallback((item: CardWithDetails) => item.id.toString(), []);
 
   if (!isReady) {
@@ -365,12 +469,49 @@ export default function CollectionScreen() {
         </TouchableOpacity>
       </View>
 
+      <View style={styles.viewToolbar}>
+        <View style={styles.viewSwitch}>
+          <TouchableOpacity
+            style={[styles.viewBtn, viewMode === 'list' && styles.viewBtnActive]}
+            onPress={() => setViewMode('list')}
+          >
+            <List size={15} color={viewMode === 'list' ? Colors.primary : Colors.textMuted} />
+            <Text style={[styles.viewBtnText, viewMode === 'list' && styles.viewBtnTextActive]}>List</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.viewBtn, viewMode === 'grid' && styles.viewBtnActive]}
+            onPress={() => setViewMode('grid')}
+          >
+            <Grid3X3 size={15} color={viewMode === 'grid' ? Colors.primary : Colors.textMuted} />
+            <Text style={[styles.viewBtnText, viewMode === 'grid' && styles.viewBtnTextActive]}>Grid</Text>
+          </TouchableOpacity>
+        </View>
+        {viewMode === 'grid' ? (
+          <View style={styles.sizeSwitch}>
+            {(['small', 'medium', 'large'] as const).map((size) => (
+              <TouchableOpacity
+                key={size}
+                style={[styles.sizeBtn, gridSize === size && styles.sizeBtnActive]}
+                onPress={() => setGridSize(size)}
+              >
+                <Text style={[styles.sizeBtnText, gridSize === size && styles.sizeBtnTextActive]}>
+                  {size === 'small' ? 'S' : size === 'medium' ? 'M' : 'L'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : null}
+      </View>
+
       <FlatList
+        key={viewMode === 'grid' ? `grid-${gridColumns}` : 'list'}
         data={cards}
-        renderItem={renderCard}
+        renderItem={viewMode === 'grid' ? renderGridCard : renderCard}
         keyExtractor={keyExtractor}
-        contentContainerStyle={styles.list}
-        ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
+        numColumns={viewMode === 'grid' ? gridColumns : 1}
+        contentContainerStyle={viewMode === 'grid' ? styles.gridList : styles.list}
+        columnWrapperStyle={viewMode === 'grid' && gridColumns > 1 ? styles.gridRow : undefined}
+        ItemSeparatorComponent={viewMode === 'list' ? () => <View style={{ height: 8 }} /> : undefined}
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.5}
         showsVerticalScrollIndicator={false}
@@ -671,9 +812,143 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary + '15',
     borderColor: Colors.primary + '40',
   },
+  viewToolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  viewSwitch: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  viewBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  viewBtnActive: {
+    backgroundColor: Colors.primary + '18',
+    borderColor: Colors.primary + '50',
+  },
+  viewBtnText: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    fontWeight: '600' as const,
+  },
+  viewBtnTextActive: {
+    color: Colors.primary,
+  },
+  sizeSwitch: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  sizeBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  sizeBtnActive: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary + '18',
+  },
+  sizeBtnText: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    fontWeight: '700' as const,
+  },
+  sizeBtnTextActive: {
+    color: Colors.primary,
+  },
   list: {
     padding: 16,
     paddingTop: 4,
+  },
+  gridList: {
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+  },
+  gridRow: {
+    gap: 12,
+    marginBottom: 12,
+  },
+  gridCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 10,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    marginBottom: 12,
+  },
+  gridInfo: {
+    padding: 8,
+    gap: 3,
+  },
+  gridName: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+    color: Colors.text,
+  },
+  gridMeta: {
+    fontSize: 10,
+    color: Colors.textMuted,
+  },
+  gridQtyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 5,
+    gap: 4,
+  },
+  gridQtyBtn: {
+    flex: 1,
+    height: 28,
+    borderRadius: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+  },
+  gridQtyBtnDisabled: {
+    opacity: 0.4,
+  },
+  gridQtyValue: {
+    minWidth: 32,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gridQtyText: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: Colors.text,
+  },
+  gridOwnedBadge: {
+    alignSelf: 'flex-start',
+    marginTop: 5,
+    paddingHorizontal: 7,
+    height: 24,
+    borderRadius: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primary + '25',
+  },
+  gridOwnedText: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: Colors.primary,
   },
   modalOverlay: {
     flex: 1,
