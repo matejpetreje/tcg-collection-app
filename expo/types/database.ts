@@ -21,6 +21,8 @@ export interface Card {
   franchise: string | null;
   date_added: string | null;
   date_modified: string | null;
+  market_price: number | null;
+  inventory_price: number | null;
 }
 
 export interface CardImage {
