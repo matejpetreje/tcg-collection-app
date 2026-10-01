@@ -656,7 +656,9 @@ export default function SettingsScreen() {
                   ? 'optcgapi.com'
                   : currentGame?.catalogSource === 'ygoprodeck'
                     ? 'YGOPRODeck'
-                    : 'Not connected'}
+                    : currentGame?.catalogSource === 'scryfall'
+                      ? 'Scryfall'
+                      : 'Not connected'}
             </Text>
           </View>
           <View style={styles.aboutRow}>
