@@ -170,7 +170,9 @@ export default function CardDetailScreen() {
     void queryClient.invalidateQueries({ queryKey: ['collection'] });
     void queryClient.invalidateQueries({ queryKey: ['collection-count'] });
     void queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
-    void queryClient.invalidateQueries({ queryKey: ['dashboard-ink-stats'] });
+    void queryClient.invalidateQueries({ queryKey: ['dashboard-ink-dist'] });
+    void queryClient.invalidateQueries({ queryKey: ['dashboard-rarity-dist'] });
+    void queryClient.invalidateQueries({ queryKey: ['dashboard-type-dist'] });
     void queryClient.invalidateQueries({ queryKey: ['dashboard-set-progress'] });
   }, [queryClient, cardIdNum, tcg]);
 
