@@ -85,15 +85,11 @@ export const [DatabaseProvider, useDatabase] = createContextHook((): DatabaseSta
               if (mounted) setSyncProgress({ current, total });
             }, tcg);
             if (mounted) {
-              const actualCount = await getCardCount(database);
-              const synced = actualCount > 0;
-              setHasCatalog(synced);
-              setCatalogCount(actualCount);
-              setLastSync(synced ? new Date().toISOString() : null);
-              if (synced) {
-                await queryClient.invalidateQueries();
-              }
-              console.log(`[Provider] Initial sync completed for ${tcg}: reported=${count}, stored=${actualCount}`);
+              setHasCatalog(count > 0);
+              setCatalogCount(count);
+              setLastSync(count > 0 ? new Date().toISOString() : null);
+              await queryClient.invalidateQueries();
+              console.log(`[Provider] Initial sync completed for ${tcg}: ${count} cards`);
             }
           } catch (syncError) {
             console.error('[Provider] Initial sync failed:', syncError);
@@ -107,8 +103,7 @@ export const [DatabaseProvider, useDatabase] = createContextHook((): DatabaseSta
 
         if (mounted) {
           setIsReady(true);
-          const finalExists = await checkCatalogExists(database);
-          console.log(`[Provider] Database ready for ${tcg}. Catalog:`, finalExists);
+          console.log(`[Provider] Database ready for ${tcg}. Catalog:`, catalogExists || await checkCatalogExists(database));
         }
       } catch (error) {
         console.error('[Provider] Database init error:', error);
