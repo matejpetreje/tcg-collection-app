@@ -1,15 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import Database from 'better-sqlite3';
+import { DatabaseSync } from 'node:sqlite';
 import { config } from './config.js';
 
 fs.mkdirSync(config.dataDir, { recursive: true });
 
-export const db = new Database(path.join(config.dataDir, 'catalog.sqlite'));
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+export const db = new DatabaseSync(path.join(config.dataDir, 'catalog.sqlite'));
 
 db.exec(`
+PRAGMA journal_mode = WAL;
+PRAGMA foreign_keys = ON;
+
 CREATE TABLE IF NOT EXISTS catalog_meta (
   key TEXT PRIMARY KEY,
   value TEXT
@@ -73,6 +74,22 @@ try {
   db.exec('ALTER TABLE mtg_printings ADD COLUMN updated_at TEXT;');
 } catch {
   // Column already exists.
+}
+
+export function withTransaction<T>(task: () => T): T {
+  db.exec('BEGIN IMMEDIATE;');
+  try {
+    const result = task();
+    db.exec('COMMIT;');
+    return result;
+  } catch (error) {
+    try {
+      db.exec('ROLLBACK;');
+    } catch {
+      // Preserve the original error.
+    }
+    throw error;
+  }
 }
 
 export function setMeta(key: string, value: string): void {
