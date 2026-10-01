@@ -47,6 +47,7 @@ export default function CollectionScreen() {
   const { db, isReady, hasCatalog } = useDatabase();
   const { tcg } = useTCG();
   const isOnePiece = tcg === 'onepiece';
+  const isYugioh = tcg === 'yugioh';
   const isLorcana = tcg === 'lorcana';
   const [filters, setFilters] = useState<CollectionFilters>({
     search: '',
@@ -231,7 +232,7 @@ export default function CollectionScreen() {
   });
 
   const { data: filterOptions } = useQuery({
-    queryKey: ['filter-options', !!db, isOnePiece],
+    queryKey: ['filter-options', !!db, tcg],
     queryFn: async () => {
       if (!db) return { inks: [], types: [], rarities: [], sets: [], strengths: [], counters: [], lives: [] };
       const inks = await safeQuery<{ ink_color: string }>(db, 'SELECT DISTINCT ink_color FROM cards WHERE ink_color IS NOT NULL ORDER BY ink_color');
@@ -256,8 +257,8 @@ export default function CollectionScreen() {
           ])
         : [[], [], []] as { v: number }[][];
       return {
-        inks: sortByOrder(inks.map(i => i.ink_color), INK_ORDER),
-        types: sortByOrder(filteredTypes, isOnePiece ? ONEPIECE_TYPES : TYPE_ORDER),
+        inks: isYugioh ? inks.map(i => i.ink_color).sort() : sortByOrder(inks.map(i => i.ink_color), INK_ORDER),
+        types: sortByOrder(filteredTypes, isOnePiece ? ONEPIECE_TYPES : (isYugioh ? ['Monster', 'Spell', 'Trap'] : TYPE_ORDER)),
         rarities: sortByOrder(rarities.map(r => r.rarity), RARITY_ORDER),
         sets: sets.map(s => s.set_code),
         strengths: statValues[0].map(r => r.v),
@@ -615,7 +616,7 @@ export default function CollectionScreen() {
             </View>
             <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
               <FilterSection
-                title={isOnePiece ? "Color" : "Ink Color"}
+                title={isOnePiece ? "Color" : isYugioh ? "Attribute" : "Ink Color"}
                 items={filterOptions?.inks ?? []}
                 selected={filters.inkColors}
                 onToggle={(item) => toggleFilterItem('inkColors', item)}
