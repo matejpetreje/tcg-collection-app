@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Switch } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, Stack } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ArrowLeft, Grid3X3, List, LayoutGrid } from 'lucide-react-native';
 import Colors from '@/constants/colors';
@@ -48,7 +48,9 @@ export default function PreferencesScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <>
+      <Stack.Screen options={{ headerShown: false }} />
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.back} onPress={() => router.back()}>
           <ArrowLeft size={20} color={Colors.text} />
@@ -116,7 +118,8 @@ export default function PreferencesScreen() {
         <Text style={styles.noteTitle}>More preferences are coming here</Text>
         <Text style={styles.noteText}>Marketplace, currency, price calculation and collection value will use this same settings area when pricing is connected.</Text>
       </View>
-    </ScrollView>
+      </ScrollView>
+    </>
   );
 }
 
