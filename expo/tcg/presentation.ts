@@ -19,6 +19,7 @@ export interface TCGPresentation {
   deckColorLabel: string | null;
   deckColors: string[];
   deckColorLimit: number | null;
+  filterColors: string[];
   cardTypes: string[];
   showInkability: boolean;
   variants: CollectionVariant[];
@@ -37,6 +38,7 @@ export const TCG_PRESENTATION: Record<TCGId, TCGPresentation> = {
     deckColorLabel: 'Ink Colors',
     deckColors: ['Amber', 'Amethyst', 'Emerald', 'Ruby', 'Sapphire', 'Steel'],
     deckColorLimit: 2,
+    filterColors: ['Amber', 'Amethyst', 'Emerald', 'Ruby', 'Sapphire', 'Steel'],
     cardTypes: ['Character', 'Action', 'Item', 'Song', 'Location'],
     showInkability: true,
     variants: [
@@ -59,6 +61,7 @@ export const TCG_PRESENTATION: Record<TCGId, TCGPresentation> = {
     deckColorLabel: 'Colors',
     deckColors: ['Red', 'Green', 'Blue', 'Purple', 'Black', 'Yellow'],
     deckColorLimit: null,
+    filterColors: ['Red', 'Green', 'Blue', 'Purple', 'Black', 'Yellow'],
     cardTypes: ['Leader', 'Character', 'Event', 'Stage', 'DON!!'],
     showInkability: false,
     variants: STANDARD_ONLY,
@@ -70,9 +73,10 @@ export const TCG_PRESENTATION: Record<TCGId, TCGPresentation> = {
   },
   yugioh: {
     colorLabel: 'Attribute',
-    deckColorLabel: 'Attributes',
-    deckColors: ['DARK', 'DIVINE', 'EARTH', 'FIRE', 'LIGHT', 'WATER', 'WIND'],
+    deckColorLabel: null,
+    deckColors: [],
     deckColorLimit: null,
+    filterColors: ['DARK', 'DIVINE', 'EARTH', 'FIRE', 'LIGHT', 'WATER', 'WIND'],
     cardTypes: ['Monster', 'Spell', 'Trap'],
     showInkability: false,
     variants: STANDARD_ONLY,
@@ -87,6 +91,7 @@ export const TCG_PRESENTATION: Record<TCGId, TCGPresentation> = {
     deckColorLabel: 'Colors',
     deckColors: ['White', 'Blue', 'Black', 'Red', 'Green', 'Colorless'],
     deckColorLimit: null,
+    filterColors: ['White', 'Blue', 'Black', 'Red', 'Green', 'Colorless'],
     cardTypes: ['Artifact', 'Battle', 'Creature', 'Enchantment', 'Instant', 'Land', 'Planeswalker', 'Sorcery'],
     showInkability: false,
     variants: STANDARD_ONLY,
@@ -101,6 +106,7 @@ export const TCG_PRESENTATION: Record<TCGId, TCGPresentation> = {
     deckColorLabel: 'Types',
     deckColors: ['Grass', 'Fire', 'Water', 'Lightning', 'Psychic', 'Fighting', 'Darkness', 'Metal', 'Dragon', 'Colorless'],
     deckColorLimit: null,
+    filterColors: ['Grass', 'Fire', 'Water', 'Lightning', 'Psychic', 'Fighting', 'Darkness', 'Metal', 'Dragon', 'Colorless'],
     cardTypes: ['Pokémon', 'Trainer', 'Energy'],
     showInkability: false,
     variants: STANDARD_ONLY,
