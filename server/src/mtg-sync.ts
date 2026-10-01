@@ -71,17 +71,18 @@ const upsertPrinting = db.prepare(`
     scryfall_id, oracle_id, set_code, set_name, collector_number, rarity,
     released_at, artist, finishes_json, promo, reprint, prices_json,
     source_image_url, source_thumbnail_url, local_image_url, local_thumbnail_url,
-    scryfall_uri
+    scryfall_uri, updated_at
   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
             COALESCE((SELECT local_image_url FROM mtg_printings WHERE scryfall_id=?), NULL),
-            COALESCE((SELECT local_thumbnail_url FROM mtg_printings WHERE scryfall_id=?), NULL), ?)
+            COALESCE((SELECT local_thumbnail_url FROM mtg_printings WHERE scryfall_id=?), NULL), ?, ?)
   ON CONFLICT(scryfall_id) DO UPDATE SET
     oracle_id=excluded.oracle_id, set_code=excluded.set_code, set_name=excluded.set_name,
     collector_number=excluded.collector_number, rarity=excluded.rarity,
     released_at=excluded.released_at, artist=excluded.artist,
     finishes_json=excluded.finishes_json, promo=excluded.promo, reprint=excluded.reprint,
     prices_json=excluded.prices_json, source_image_url=excluded.source_image_url,
-    source_thumbnail_url=excluded.source_thumbnail_url, scryfall_uri=excluded.scryfall_uri
+    source_thumbnail_url=excluded.source_thumbnail_url, scryfall_uri=excluded.scryfall_uri,
+    updated_at=excluded.updated_at
 `);
 
 async function importBulk(filePath: string, updatedAt: string): Promise<number> {
@@ -133,7 +134,8 @@ async function importBulk(filePath: string, updatedAt: string): Promise<number> 
         images.small,
         card.id,
         card.id,
-        card.scryfall_uri ?? null
+        card.scryfall_uri ?? null,
+        updatedAt
       );
     }
   });
@@ -157,10 +159,8 @@ async function importBulk(filePath: string, updatedAt: string): Promise<number> 
     count += batch.length;
   }
 
-  db.prepare(`
-    DELETE FROM mtg_printings
-    WHERE oracle_id NOT IN (SELECT oracle_id FROM mtg_cards)
-  `).run();
+  db.prepare('DELETE FROM mtg_printings WHERE updated_at IS NULL OR updated_at != ?').run(updatedAt);
+  db.prepare('DELETE FROM mtg_cards WHERE updated_at != ?').run(updatedAt);
 
   return count;
 }
