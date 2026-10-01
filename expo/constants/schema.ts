@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS cards (
   date_added TEXT,
   date_modified TEXT,
   market_price REAL,
-  inventory_price REAL
+  inventory_price REAL,
+  game_data TEXT
 );
 
 CREATE TABLE IF NOT EXISTS sets (
