@@ -105,17 +105,25 @@ export default function CollectionScreen() {
              LEFT JOIN user_collection uc ON uc.card_id = c.id
              LEFT JOIN images i ON i.card_id = c.id
              LEFT JOIN sets s ON s.set_code = c.set_code
-             WHERE 1=1
-             AND c.id = (
-               SELECT c2.id FROM cards c2
-               WHERE c2.card_number = c.card_number
-               ORDER BY CASE
-                 WHEN c2.unique_id = c2.card_number THEN 0
-                 WHEN c2.unique_id NOT LIKE '%_p%' THEN 1
-                 ELSE 2
-               END, c2.id
-               LIMIT 1
-             )`;
+             WHERE 1=1`;
+
+    // Lorcana and One Piece can contain multiple rows representing alternate
+    // printings/variants of the same logical card. Yu-Gi-Oh is already imported
+    // as exactly one base row per YGOPRODeck passcode, with all printings stored
+    // inside game_data. Running the legacy correlated representative-card
+    // subquery across 14k YGO rows is unnecessary and extremely expensive.
+    if (!isYugioh) {
+      sql += ` AND c.id = (
+        SELECT c2.id FROM cards c2
+        WHERE c2.card_number = c.card_number
+        ORDER BY CASE
+          WHEN c2.unique_id = c2.card_number THEN 0
+          WHEN c2.unique_id NOT LIKE '%_p%' THEN 1
+          ELSE 2
+        END, c2.id
+        LIMIT 1
+      )`;
+    }
 
     const params: unknown[] = [];
 
@@ -195,7 +203,7 @@ export default function CollectionScreen() {
     }
 
     return { sql, params };
-  }, [filters, isOnePiece]);
+  }, [filters, isOnePiece, isYugioh]);
 
   const queryClient = useQueryClient();
 
