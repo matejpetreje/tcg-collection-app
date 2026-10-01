@@ -49,6 +49,7 @@ export default function CollectionScreen() {
   const { tcg } = useTCG();
   const isOnePiece = tcg === 'onepiece';
   const isYugioh = tcg === 'yugioh';
+  const isMtg = tcg === 'mtg';
   const isLorcana = tcg === 'lorcana';
   const presentation = tcg ? getTCGPresentation(tcg) : null;
   const [filters, setFilters] = useState<CollectionFilters>({
@@ -121,7 +122,7 @@ export default function CollectionScreen() {
     // as exactly one base row per YGOPRODeck passcode, with all printings stored
     // inside game_data. Running the legacy correlated representative-card
     // subquery across 14k YGO rows is unnecessary and extremely expensive.
-    if (!isYugioh) {
+    if (!isYugioh && !isMtg) {
       sql += ` AND c.id = (
         SELECT c2.id FROM cards c2
         WHERE c2.card_number = c.card_number
@@ -141,8 +142,14 @@ export default function CollectionScreen() {
       params.push(`%${filters.search.trim()}%`);
     }
     if (filters.inkColors.length > 0) {
-      sql += ` AND c.ink_color IN (${filters.inkColors.map(() => '?').join(',')})`;
-      params.push(...filters.inkColors);
+      if (isMtg) {
+        const colorConditions = filters.inkColors.map(() => "(',' || c.ink_color || ',') LIKE ?").join(' OR ');
+        sql += ` AND (${colorConditions})`;
+        params.push(...filters.inkColors.map(color => `%,${color},%`));
+      } else {
+        sql += ` AND c.ink_color IN (${filters.inkColors.map(() => '?').join(',')})`;
+        params.push(...filters.inkColors);
+      }
     }
     if (filters.cardTypes.length > 0) {
       sql += ` AND c.type IN (${filters.cardTypes.map(() => '?').join(',')})`;
@@ -170,8 +177,14 @@ export default function CollectionScreen() {
       params.push(...filters.rarities);
     }
     if (filters.setCodes.length > 0) {
-      sql += ` AND c.set_code IN (${filters.setCodes.map(() => '?').join(',')})`;
-      params.push(...filters.setCodes);
+      if (isMtg) {
+        const setConditions = filters.setCodes.map(() => "c.game_data LIKE ?").join(' OR ');
+        sql += ` AND (${setConditions})`;
+        params.push(...filters.setCodes.map(code => `%"set_code":"${code}"%`));
+      } else {
+        sql += ` AND c.set_code IN (${filters.setCodes.map(() => '?').join(',')})`;
+        params.push(...filters.setCodes);
+      }
     }
     if (isOnePiece && filters.strengths.length > 0) {
       sql += ` AND c.strength IN (${filters.strengths.map(() => '?').join(',')})`;
@@ -214,7 +227,7 @@ export default function CollectionScreen() {
     }
 
     return { sql, params };
-  }, [filters, isLorcana, isOnePiece, isYugioh]);
+  }, [filters, isLorcana, isMtg, isOnePiece, isYugioh]);
 
   const queryClient = useQueryClient();
 
@@ -257,13 +270,20 @@ export default function CollectionScreen() {
       const inks = await safeQuery<{ ink_color: string }>(db, 'SELECT DISTINCT ink_color FROM cards WHERE ink_color IS NOT NULL ORDER BY ink_color');
       const types = await safeQuery<{ type: string }>(db, 'SELECT DISTINCT type FROM cards WHERE type IS NOT NULL ORDER BY type');
       const rarities = await safeQuery<{ rarity: string }>(db, 'SELECT DISTINCT rarity FROM cards WHERE rarity IS NOT NULL ORDER BY rarity');
-      const sets = await safeQuery<{ set_code: string; release_date: string | null }>(
-        db,
-        `SELECT DISTINCT c.set_code, s.release_date
-         FROM cards c LEFT JOIN sets s ON s.set_code = c.set_code
-         WHERE c.set_code IS NOT NULL
-         ORDER BY COALESCE(s.release_date, '9999') ASC`
-      );
+      const sets = isMtg
+        ? await safeQuery<{ set_code: string; release_date: string | null }>(
+            db,
+            `SELECT set_code, release_date
+             FROM sets
+             ORDER BY COALESCE(release_date, '9999') DESC, set_code ASC`
+          )
+        : await safeQuery<{ set_code: string; release_date: string | null }>(
+            db,
+            `SELECT DISTINCT c.set_code, s.release_date
+             FROM cards c LEFT JOIN sets s ON s.set_code = c.set_code
+             WHERE c.set_code IS NOT NULL
+             ORDER BY COALESCE(s.release_date, '9999') ASC`
+          );
       const allTypes = types.map(t => t.type);
       const filteredTypes = isOnePiece
         ? allTypes.filter(t => ONEPIECE_TYPES.includes(t))
