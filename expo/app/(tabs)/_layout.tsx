@@ -3,10 +3,12 @@ import { LayoutDashboard, Target, Library, Layers, Heart, Settings } from "lucid
 import React from "react";
 import Colors from "@/constants/colors";
 import { useTCG } from "@/providers/TCGProvider";
+import { getTCG } from "@/tcg/registry";
 
 export default function TabLayout() {
   const { tcg } = useTCG();
-  const showLore = tcg === 'lorcana';
+  const game = tcg ? getTCG(tcg) : null;
+  const showLore = game?.features.playTool === 'lore';
   return (
     <Tabs
       screenOptions={{
