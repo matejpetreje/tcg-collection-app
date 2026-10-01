@@ -7,6 +7,7 @@ import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { getSetNumber } from '@/constants/sets';
 import { getCardFoundation } from '@/constants/tcg-card-foundations';
+import { getTCGPresentation } from '@/tcg/presentation';
 import { useDatabase } from '@/providers/DatabaseProvider';
 import { useTCG } from '@/providers/TCGProvider';
 import { safeRun } from '@/utils/database';
@@ -23,8 +24,8 @@ function CardListItemComponent({ card, showQuickAdd = true }: CardListItemProps)
   const { db } = useDatabase();
   const queryClient = useQueryClient();
   const { tcg } = useTCG();
-  const isOnePiece = tcg === 'onepiece';
-  const gameStats = tcg === 'lorcana' ? [] : getCardFoundation(tcg).getDisplayStats(card);
+  const presentation = tcg ? getTCGPresentation(tcg) : null;
+  const gameStats = tcg && tcg !== 'lorcana' ? getCardFoundation(tcg).getDisplayStats(card) : [];
 
   const handlePress = useCallback(() => {
     router.push(`/card/${card.id}`);
@@ -73,7 +74,7 @@ function CardListItemComponent({ card, showQuickAdd = true }: CardListItemProps)
   const inkColor = Colors.ink[card.ink_color ?? ''] ?? Colors.textSecondary;
   const rarityColor = Colors.rarity[card.rarity ?? ''] ?? Colors.textSecondary;
   const totalOwned = card.total_owned ?? (card.qty + card.qty_foil + card.qty_enchanted + (card.qty_epic ?? 0) + (card.qty_promo ?? 0) + (card.qty_iconic ?? 0) + (card.qty_play ?? 0));
-  const setNum = getSetNumber(card.set_name);
+  const setNum = tcg === 'lorcana' ? getSetNumber(card.set_name) : null;
 
   return (
     <TouchableOpacity
@@ -108,9 +109,9 @@ function CardListItemComponent({ card, showQuickAdd = true }: CardListItemProps)
           {card.rarity ? (
             <Text style={[styles.rarityText, { color: rarityColor }]}>{card.rarity}</Text>
           ) : null}
-          {card.inkable === 1 && !isOnePiece ? (
+          {presentation?.showInkability && card.inkable === 1 ? (
             <Droplets size={12} color={Colors.accent} />
-          ) : card.inkable === 0 && !isOnePiece ? (
+          ) : presentation?.showInkability && card.inkable === 0 ? (
             <DropletOff size={12} color={Colors.textMuted} />
           ) : null}
         </View>
@@ -172,7 +173,7 @@ function CardListItemComponent({ card, showQuickAdd = true }: CardListItemProps)
             <Text style={styles.ownedText}>{totalOwned}</Text>
           </View>
         ) : null}
-        {totalOwned > 0 ? (
+        {tcg === 'lorcana' && totalOwned > 0 ? (
           <View style={styles.variantRow}>
             {card.qty > 0 ? <View style={[styles.variantBadge, { backgroundColor: Colors.accent + '30' }]}><Text style={[styles.variantText, { color: Colors.accent }]}>C{card.qty}</Text></View> : null}
             {card.qty_foil > 0 ? <View style={[styles.variantBadge, { backgroundColor: Colors.primaryLight + '30' }]}><Text style={[styles.variantText, { color: Colors.primaryLight }]}>F{card.qty_foil}</Text></View> : null}
