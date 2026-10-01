@@ -12,7 +12,7 @@ import { useRouter } from 'expo-router';
 import Colors from '@/constants/colors';
 import { useDatabase } from '@/providers/DatabaseProvider';
 import { useTCG } from '@/providers/TCGProvider';
-import { safeQuery, safeRun, backupCardIdMapping, getSavedCardIdMapping, buildV12IdBridge, fallbackRecoverV12Ids } from '@/utils/database';
+import { safeQuery, safeRun, backupCardIdMapping, getSavedCardIdMapping, buildV12IdBridge, fallbackRecoverV12Ids, getDatabase, initializeTables } from '@/utils/database';
 import { RESET_USER_DATA_SQL, RESET_CATALOG_SQL } from '@/constants/schema';
 import { TCGS } from '@/constants/tcgs';
 import { getTCG } from '@/tcg/registry';
@@ -444,10 +444,12 @@ export default function SettingsScreen() {
 
   const importLogia = useMutation({
     mutationFn: async () => {
-      if (!db) throw new Error('Database not ready');
       if (tcg !== 'onepiece') {
         throw new Error('Logia CSV import is currently available for One Piece only.');
       }
+
+      const activeDb = db ?? await getDatabase(tcg);
+      await initializeTables(activeDb);
 
       const picked = await DocumentPicker.getDocumentAsync({
         type: ['text/csv', 'text/comma-separated-values', 'application/csv', 'text/plain'],
@@ -473,7 +475,7 @@ export default function SettingsScreen() {
         csvText = await response.text();
       }
 
-      return importLogiaOnePieceCollection(db, csvText);
+      return importLogiaOnePieceCollection(activeDb, csvText);
     },
     onSuccess: (result) => {
       if (!result) return;
@@ -645,7 +647,7 @@ export default function SettingsScreen() {
                 ]
               );
             }}
-            disabled={importLogia.isPending}
+            disabled={!isReady || isSyncing || importLogia.isPending}
           >
             <View style={[styles.rowIcon, { backgroundColor: Colors.primary + '20' }]}>
               <Download size={18} color={Colors.primary} />
