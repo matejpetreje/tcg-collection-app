@@ -7,6 +7,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { DatabaseProvider } from "@/providers/DatabaseProvider";
 import { TCGProvider, useTCG } from "@/providers/TCGProvider";
 import Colors from "@/constants/colors";
+import { getTCGPresentation } from "@/tcg/presentation";
 
 void SplashScreen.preventAutoHideAsync();
 
@@ -20,8 +21,37 @@ function RootLayoutNav() {
   useEffect(() => {
     if (!ready) return;
     const first = segments[0] as string | undefined;
-    if (!tcg && first !== 'tcg-select') {
-      router.replace('/tcg-select');
+
+    if (!tcg) {
+      if (first !== 'tcg-select') router.replace('/tcg-select');
+      return;
+    }
+
+    const presentation = getTCGPresentation(tcg);
+    const lorcanaOnlyRoutes = new Set([
+      'lore-counter',
+      'log-game',
+      'game-history',
+      'player-profile-qr',
+      'scan-player-qr',
+      'share-game-history',
+      'scan-history-qr',
+      'community-deck',
+      'community-decks-search',
+    ]);
+
+    if (first && lorcanaOnlyRoutes.has(first) && tcg !== 'lorcana') {
+      router.replace('/(tabs)/(dashboard)');
+      return;
+    }
+
+    if (first === 'scan-card' && !presentation.showScanner) {
+      router.replace('/(tabs)/collection');
+      return;
+    }
+
+    if (first === 'starter-deck' && !presentation.showStarterDecks) {
+      router.replace('/(tabs)/decks');
     }
   }, [ready, tcg, segments, router]);
 
