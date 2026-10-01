@@ -23,6 +23,8 @@ export interface Card {
   date_modified: string | null;
   market_price: number | null;
   inventory_price: number | null;
+  /** TCG-specific structured fields serialized as JSON. Lorcana keeps using its native columns. */
+  game_data: string | null;
 }
 
 export interface CardImage {
