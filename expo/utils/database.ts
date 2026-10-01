@@ -636,46 +636,46 @@ async function syncYugioh(
   db: SQLite.SQLiteDatabase,
   onProgress?: (current: number, total: number) => void
 ): Promise<number> {
-  const apiCards = await fetchAllYugiohCards();
+  // Deliberately follows the same sync lifecycle as One Piece:
+  // fetch -> clear derived catalog rows -> upsert sets -> batch card transactions -> import log.
+  const apiCards: YugiohApiCard[] = await fetchAllYugiohCards((c, t) => {
+    onProgress?.(c, t);
+  });
   const total = apiCards.length;
   console.log(`[Sync:YGO] Received ${total} cards`);
 
-  // Yu-Gi-Oh is a large catalog. On web, thousands of tiny transactions are
-  // dramatically slower than the download itself, so keep the import lean:
-  // one base-card row + one primary image row. Printings/artworks stay in game_data.
-  await db.execAsync('DELETE FROM subtypes; DELETE FROM abilities; DELETE FROM images;');
+  await db.execAsync('DELETE FROM subtypes;');
+  await db.execAsync('DELETE FROM abilities;');
+  await db.execAsync('DELETE FROM images;');
 
-  const sets = new Map<string, string>();
+  const setsMap = new Map<string, string>();
   for (const card of apiCards) {
     for (const printing of card.card_sets ?? []) {
       const setCode = yugiohSetPrefix(printing.set_code);
-      if (setCode && !sets.has(setCode)) sets.set(setCode, printing.set_name);
+      if (setCode && printing.set_name) setsMap.set(setCode, printing.set_name);
     }
   }
+  for (const [setCode, name] of setsMap) {
+    await db.runAsync(
+      `INSERT INTO sets (set_code, name) VALUES (?, ?)
+       ON CONFLICT(set_code) DO UPDATE SET name = excluded.name`,
+      [setCode, name]
+    );
+  }
 
-  await withSyncTransaction(db, async (txn) => {
-    for (const [setCode, name] of sets) {
-      await txn.runAsync(
-        `INSERT INTO sets (set_code, name, release_date) VALUES (?, ?, NULL)
-         ON CONFLICT(set_code) DO UPDATE SET name = excluded.name`,
-        [setCode, name]
-      );
-    }
-  });
-
-  const BATCH_SIZE = Platform.OS === 'web' ? 500 : 100;
+  const BATCH_SIZE = 50;
   let inserted = 0;
 
   for (let i = 0; i < apiCards.length; i += BATCH_SIZE) {
     const batch = apiCards.slice(i, i + BATCH_SIZE);
+
     await withSyncTransaction(db, async (txn) => {
       for (const card of batch) {
+        const uniqueId = `ygo-${card.id}`;
         const primarySet = card.card_sets?.[0] ?? null;
         const setCode = yugiohSetPrefix(primarySet?.set_code);
-        const uniqueId = `ygo-${card.id}`;
         const prices = card.card_prices?.[0];
         const baseType = yugiohBaseType(card);
-        const image = card.card_images?.[0] ?? null;
 
         await txn.runAsync(
           `INSERT INTO cards (name, version, cost, ink_color, type, rarity, set_code, card_number,
@@ -691,11 +691,28 @@ async function syncYugioh(
              date_added = excluded.date_added, market_price = excluded.market_price,
              inventory_price = excluded.inventory_price, game_data = excluded.game_data`,
           [
-            card.name, card.frameType ?? null, null, card.attribute ?? null, baseType,
-            primarySet?.set_rarity ?? null, setCode, String(card.id), card.desc ?? null, null,
-            card.atk ?? null, card.def ?? null, null, null, 0, uniqueId,
-            card.race ?? null, card.archetype ?? null, card.tcg_date ?? null, null,
-            priceNumber(prices?.cardmarket_price), priceNumber(prices?.tcgplayer_price),
+            card.name ?? '',
+            card.frameType ?? null,
+            null,
+            card.attribute ?? null,
+            baseType,
+            primarySet?.set_rarity ?? null,
+            setCode,
+            String(card.id),
+            card.desc ?? null,
+            null,
+            card.atk ?? null,
+            card.def ?? null,
+            null,
+            null,
+            0,
+            uniqueId,
+            card.race ?? null,
+            card.archetype ?? null,
+            card.tcg_date ?? null,
+            null,
+            priceNumber(prices?.cardmarket_price),
+            priceNumber(prices?.tcgplayer_price),
             JSON.stringify({
               passcode: card.id,
               card_type: baseType,
@@ -715,41 +732,57 @@ async function syncYugioh(
               spell_type: baseType === 'Spell' ? card.race ?? null : null,
               trap_type: baseType === 'Trap' ? card.race ?? null : null,
               ban_tcg: card.banlist_info?.ban_tcg ?? null,
-              printings: (card.card_sets ?? []).map(p => ({
-                set_name: p.set_name, set_code: p.set_code, rarity: p.set_rarity,
-                rarity_code: p.set_rarity_code ?? null, price: p.set_price ?? null,
+              formats: card.formats ?? [],
+              treated_as: card.treated_as ?? null,
+              tcg_date: card.tcg_date ?? null,
+              ocg_date: card.ocg_date ?? null,
+              konami_id: card.konami_id ?? null,
+              has_effect: card.has_effect ?? null,
+              printings: (card.card_sets ?? []).map((p) => ({
+                set_name: p.set_name,
+                set_code: p.set_code,
+                rarity: p.set_rarity,
+                rarity_code: p.set_rarity_code ?? null,
+                price: p.set_price ?? null,
               })),
-              artworks: (card.card_images ?? []).map(img => ({
-                id: img.id, image_url: img.image_url, thumbnail_url: img.image_url_small,
+              artworks: (card.card_images ?? []).map((img) => ({
+                id: img.id,
+                image_url: img.image_url,
+                thumbnail_url: img.image_url_small,
+                cropped_url: img.image_url_cropped ?? null,
               })),
               prices: prices ?? null,
             }),
           ]
         );
 
-        // Resolve the inserted/upserted row without an extra helper round-trip.
-        if (image) {
+        const cardId = await getCardIdByUniqueId(txn, uniqueId);
+        const image = card.card_images?.[0] ?? null;
+        if (cardId && image?.image_url) {
           await txn.runAsync(
-            `INSERT INTO images (card_id, image_url, thumbnail_url)
-             SELECT id, ?, ? FROM cards WHERE unique_id = ?
-             ON CONFLICT(card_id) DO UPDATE SET
-               image_url = excluded.image_url, thumbnail_url = excluded.thumbnail_url`,
-            [image.image_url, image.image_url_small, uniqueId]
+            `INSERT INTO images (card_id, image_url, thumbnail_url) VALUES (?, ?, ?)
+             ON CONFLICT(card_id) DO UPDATE SET image_url = excluded.image_url, thumbnail_url = excluded.thumbnail_url`,
+            [cardId, image.image_url, image.image_url_small ?? image.image_url]
           );
         }
+
+        if (cardId && card.race) {
+          await txn.runAsync(
+            'INSERT INTO subtypes (card_id, subtype) VALUES (?, ?)',
+            [cardId, card.race]
+          );
+        }
+
         inserted++;
       }
     });
 
-    onProgress?.(inserted, total);
-    if (inserted % 1000 === 0 || inserted === total) {
-      console.log(`[Sync:YGO] Stored ${inserted}/${total}`);
-    }
+    onProgress?.(Math.min(inserted, total), total);
   }
 
   await db.runAsync(
     "INSERT INTO import_log (imported_at, source, notes) VALUES (datetime('now'), 'YGOPRODeck API v7', ?)",
-    [`Synced ${inserted} TCG cards`]
+    [`Synced ${inserted} cards from API`]
   );
   await db.runAsync(
     "INSERT INTO app_settings (key, value) VALUES ('last_sync', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
