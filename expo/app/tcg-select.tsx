@@ -22,7 +22,11 @@ export default function TCGSelectScreen() {
     try {
       await setTcg(id);
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      router.replace('/(tabs)/(dashboard)');
+      // Give the TCG/Database providers one render to detach the previous catalog
+      // before mounting the dashboard for the newly selected game.
+      requestAnimationFrame(() => {
+        router.replace('/(tabs)/(dashboard)');
+      });
     } catch (e) {
       console.log('[TCGSelect] save error', e);
     }
