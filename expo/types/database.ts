@@ -66,6 +66,17 @@ export interface UserCollection {
   updated_at: string;
 }
 
+export interface CardPrintingCollection {
+  card_id: number;
+  printing_key: string;
+  set_code: string;
+  set_name: string | null;
+  rarity: string | null;
+  qty: number;
+  note: string | null;
+  updated_at: string;
+}
+
 export interface Deck {
   id: number;
   name: string;
