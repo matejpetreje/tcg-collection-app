@@ -9,6 +9,7 @@ import { Search, SlidersHorizontal, X, Check, Library, Camera, Lock, Unlock, Lis
 import Colors from '@/constants/colors';
 import { useDatabase } from '@/providers/DatabaseProvider';
 import { useTCG } from '@/providers/TCGProvider';
+import { getTCGPresentation } from '@/tcg/presentation';
 import { safeQuery, safeRun } from '@/utils/database';
 import CardListItem from '@/components/CardListItem';
 import CardImage from '@/components/CardImage';
@@ -49,6 +50,7 @@ export default function CollectionScreen() {
   const isOnePiece = tcg === 'onepiece';
   const isYugioh = tcg === 'yugioh';
   const isLorcana = tcg === 'lorcana';
+  const presentation = tcg ? getTCGPresentation(tcg) : null;
   const [filters, setFilters] = useState<CollectionFilters>({
     search: '',
     inkColors: [],
@@ -267,9 +269,11 @@ export default function CollectionScreen() {
           ])
         : [[], [], []] as { v: number }[][];
       return {
-        inks: isYugioh ? inks.map(i => i.ink_color).sort() : sortByOrder(inks.map(i => i.ink_color), INK_ORDER),
-        types: sortByOrder(filteredTypes, isOnePiece ? ONEPIECE_TYPES : (isYugioh ? ['Monster', 'Spell', 'Trap'] : TYPE_ORDER)),
-        rarities: sortByOrder(rarities.map(r => r.rarity), RARITY_ORDER),
+        inks: isLorcana
+          ? sortByOrder(inks.map(i => i.ink_color), INK_ORDER)
+          : sortByOrder(inks.map(i => i.ink_color), presentation?.filterColors ?? []),
+        types: sortByOrder(filteredTypes, presentation?.cardTypes ?? TYPE_ORDER),
+        rarities: sortByOrder(rarities.map(r => r.rarity), isLorcana ? RARITY_ORDER : []),
         sets: sets.map(s => s.set_code),
         strengths: statValues[0].map(r => r.v),
         counters: statValues[1].map(r => r.v),
@@ -630,7 +634,7 @@ export default function CollectionScreen() {
             </View>
             <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
               <FilterSection
-                title={isOnePiece ? "Color" : isYugioh ? "Attribute" : "Ink Color"}
+                title={presentation?.colorLabel ?? "Color"}
                 items={filterOptions?.inks ?? []}
                 selected={filters.inkColors}
                 onToggle={(item) => toggleFilterItem('inkColors', item)}
