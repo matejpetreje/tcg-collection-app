@@ -1,11 +1,28 @@
 import * as SQLite from 'expo-sqlite';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import { CATALOG_TABLES_SQL, USER_TABLES_SQL, USER_INDEXES_SQL, VIEWS_SQL } from '@/constants/schema';
 import { fetchAllCards } from '@/utils/api';
 import { fetchAllOnePieceCards, type OnePieceApiCard } from '@/utils/onepiece-api';
 import type { TCGId } from '@/constants/tcgs';
 
 const dbInstances: Record<string, SQLite.SQLiteDatabase> = {};
+
+async function withSyncTransaction(
+  db: SQLite.SQLiteDatabase,
+  task: (txn: SQLite.SQLiteDatabase) => Promise<void>
+): Promise<void> {
+  if (Platform.OS === 'web') {
+    await db.withTransactionAsync(async () => {
+      await task(db);
+    });
+    return;
+  }
+
+  await db.withExclusiveTransactionAsync(async (txn) => {
+    await task(txn);
+  });
+}
 
 function dbFileForTCG(tcg: TCGId): string {
   switch (tcg) {
@@ -339,7 +356,7 @@ async function syncLorcana(
   for (let i = 0; i < apiCards.length; i += BATCH_SIZE) {
     const batch = apiCards.slice(i, i + BATCH_SIZE);
 
-    await db.withExclusiveTransactionAsync(async (txn) => {
+    await withSyncTransaction(db, async (txn) => {
       for (const card of batch) {
         await txn.runAsync(
           `INSERT INTO cards (name, version, cost, ink_color, type, rarity, set_code, card_number,
@@ -463,7 +480,7 @@ async function syncOnePiece(
   for (let i = 0; i < apiCards.length; i += BATCH_SIZE) {
     const batch = apiCards.slice(i, i + BATCH_SIZE);
 
-    await db.withExclusiveTransactionAsync(async (txn) => {
+    await withSyncTransaction(db, async (txn) => {
       for (const c of batch) {
         const uniqueId = c.id ?? c.code ?? null;
         const setCode = opSetCodeFromId(c.code ?? c.id);
