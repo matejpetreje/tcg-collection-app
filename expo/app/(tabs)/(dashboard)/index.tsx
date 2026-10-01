@@ -91,6 +91,8 @@ export default function DashboardScreen() {
   );
 
   const isOnePiece = currentTCG === 'onepiece';
+  const isLorcana = currentTCG === 'lorcana';
+  const isYugioh = currentTCG === 'yugioh';
 
   const currentTCGName = useMemo(() => {
     const t = TCGS.find((x) => x.id === currentTCG);
@@ -258,7 +260,7 @@ export default function DashboardScreen() {
   });
 
   const { data: topValueCardsRaw } = useQuery({
-    queryKey: ['dashboard-top-value', !!db, hasCatalog],
+    queryKey: ['dashboard-top-value', currentTCG, !!db, hasCatalog],
     queryFn: async () => {
       if (!db) return [];
       try {
@@ -284,7 +286,7 @@ export default function DashboardScreen() {
         return [];
       }
     },
-    enabled: isReady && !!db && hasCatalog,
+    enabled: isReady && !!db && hasCatalog && isLorcana,
   });
 
   const topValueCards = useMemo(() => {
@@ -396,7 +398,7 @@ export default function DashboardScreen() {
   });
 
   const { data: typeDist } = useQuery({
-    queryKey: ['dashboard-type-dist', !!db, hasCatalog],
+    queryKey: ['dashboard-type-dist', currentTCG, !!db, hasCatalog],
     queryFn: async () => {
       if (!db) return [];
       const rows = await safeQuery<TypeDistItem>(
@@ -410,7 +412,7 @@ export default function DashboardScreen() {
          AND c.type IS NOT NULL
          GROUP BY c.type`
       );
-      const order = isOnePiece ? ONEPIECE_TYPE_ORDER : TYPE_ORDER;
+      const order = isOnePiece ? ONEPIECE_TYPE_ORDER : isYugioh ? ['Monster', 'Spell', 'Trap'] : TYPE_ORDER;
       const orderMap = new Map(order.map((v, i) => [v, i]));
       return rows.sort((a, b) => (orderMap.get(a.type) ?? 999) - (orderMap.get(b.type) ?? 999));
     },
@@ -657,7 +659,7 @@ export default function DashboardScreen() {
         <View style={styles.sectionHeaderRow}>
           <View style={styles.sectionHeader}>
             <Palette size={18} color={Colors.primary} />
-            <Text style={styles.sectionTitle}>{isOnePiece ? 'Color Distribution' : 'Ink Distribution'}</Text>
+            <Text style={styles.sectionTitle}>{isOnePiece ? 'Color Distribution' : isYugioh ? 'Attribute Distribution' : 'Ink Distribution'}</Text>
           </View>
           <View style={styles.sectionHeaderRight}>
             {renderDistToggle(inkDistMode, setInkDistMode)}
