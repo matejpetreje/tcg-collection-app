@@ -57,7 +57,7 @@ function OnePieceStarterDeckView({ deckId, meta, db, ready, router }: {
   const title = meta ? `${meta.set} ${meta.setNumber}: ${meta.name}` : setCode;
 
   const { data: cards, isLoading } = useQuery({
-    queryKey: ['starter-deck-cards', setCode, !!db],
+    queryKey: ['starter-deck-cards', tcg, setCode, !!db],
     queryFn: async () => {
       if (!db || !setCode) return [];
       return safeQuery<DeckCardRow>(
