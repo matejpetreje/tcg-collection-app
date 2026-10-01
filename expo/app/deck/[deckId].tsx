@@ -9,6 +9,8 @@ import * as Haptics from 'expo-haptics';
 import * as Clipboard from 'expo-clipboard';
 import Colors from '@/constants/colors';
 import { useDatabase } from '@/providers/DatabaseProvider';
+import { useTCG } from '@/providers/TCGProvider';
+import { getTCGPresentation } from '@/tcg/presentation';
 import { safeQuery, safeQueryFirst, safeRun } from '@/utils/database';
 import CardImage from '@/components/CardImage';
 import EmptyState from '@/components/EmptyState';
@@ -19,13 +21,15 @@ export default function DeckDetailScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { db } = useDatabase();
+  const { tcg } = useTCG();
+  const presentation = tcg ? getTCGPresentation(tcg) : null;
   const [showStats, setShowStats] = useState<boolean>(false);
   const [filterInk, setFilterInk] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<string | null>(null);
   const deckIdNum = parseInt(deckId ?? '0', 10);
 
   const { data: deck } = useQuery({
-    queryKey: ['deck', deckIdNum, !!db],
+    queryKey: ['deck', tcg, deckIdNum, !!db],
     queryFn: async () => {
       if (!db) return null;
       return safeQueryFirst<Deck>(db, 'SELECT * FROM decks WHERE id = ?', [deckIdNum]);
@@ -34,7 +38,7 @@ export default function DeckDetailScreen() {
   });
 
   const { data: cards, isLoading } = useQuery({
-    queryKey: ['deck-cards', deckIdNum, !!db],
+    queryKey: ['deck-cards', tcg, deckIdNum, !!db],
     queryFn: async () => {
       if (!db) return [];
       return safeQuery<DeckCardWithDetails>(
@@ -53,7 +57,7 @@ export default function DeckDetailScreen() {
   });
 
   const { data: deckStats } = useQuery({
-    queryKey: ['deck-stats', deckIdNum, !!db],
+    queryKey: ['deck-stats', tcg, deckIdNum, !!db],
     queryFn: async () => {
       if (!db) return null;
       const totalCards = await safeQueryFirst<{ total: number }>(
@@ -252,7 +256,7 @@ export default function DeckDetailScreen() {
           <View style={dcStyles.cardInfo}>
             <Text style={dcStyles.cardName} numberOfLines={1}>{item.name}</Text>
             <View style={dcStyles.cardMeta}>
-              <View style={[dcStyles.inkDot, { backgroundColor: inkColor }]} />
+              {item.ink_color ? <View style={[dcStyles.inkDot, { backgroundColor: inkColor }]} /> : null}
               {item.cost !== null && <Text style={dcStyles.costText}>{item.cost}</Text>}
               <Text style={dcStyles.typeText}>{item.type ?? ''}</Text>
             </View>
@@ -382,15 +386,17 @@ export default function DeckDetailScreen() {
               </View>
             )}
 
-            <View style={styles.actionRow}>
-              <TouchableOpacity
-                style={styles.logGameBtn}
-                onPress={() => router.push({ pathname: '/log-game', params: { deckId: deckIdNum.toString() } })}
-              >
-                <Swords size={16} color={Colors.text} />
-                <Text style={styles.logGameText}>Log Game</Text>
-              </TouchableOpacity>
-            </View>
+            {tcg === 'lorcana' && (
+              <View style={styles.actionRow}>
+                <TouchableOpacity
+                  style={styles.logGameBtn}
+                  onPress={() => router.push({ pathname: '/log-game', params: { deckId: deckIdNum.toString() } })}
+                >
+                  <Swords size={16} color={Colors.text} />
+                  <Text style={styles.logGameText}>Log Game</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             <TouchableOpacity
               style={styles.statsToggle}
@@ -407,10 +413,12 @@ export default function DeckDetailScreen() {
                   <Text style={styles.statLabel}>Total Cards</Text>
                   <Text style={styles.statVal}>{deckStats.total}</Text>
                 </View>
-                <View style={styles.statRow}>
-                  <Text style={styles.statLabel}>Avg Cost</Text>
-                  <Text style={styles.statVal}>{deckStats.avgCost}</Text>
-                </View>
+                {deckStats.costCurve.length > 0 && (
+                  <View style={styles.statRow}>
+                    <Text style={styles.statLabel}>Avg Cost</Text>
+                    <Text style={styles.statVal}>{deckStats.avgCost}</Text>
+                  </View>
+                )}
 
                 {deckStats.gameStats.total > 0 && (
                   <View style={styles.statBlock}>
@@ -435,7 +443,7 @@ export default function DeckDetailScreen() {
 
                 {deckStats.inkDist.length > 0 && (
                   <View style={styles.statBlock}>
-                    <Text style={styles.statBlockTitle}>Ink Distribution</Text>
+                    <Text style={styles.statBlockTitle}>{presentation?.colorLabel ?? 'Color'} Distribution</Text>
                     {deckStats.inkDist.map(ink => (
                       <View key={ink.ink_color} style={styles.distRow}>
                         <View style={[styles.distDot, { backgroundColor: Colors.ink[ink.ink_color] ?? Colors.textMuted }]} />
