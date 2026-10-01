@@ -123,8 +123,9 @@ export const ONEPIECE_STARTER_DECKS: StarterDeck[] = [
 
 /** Returns the starter deck catalog for the active TCG. */
 export function getStarterDecks(tcg: TCGId | null): StarterDeck[] {
+  if (tcg === 'lorcana') return LORCANA_STARTER_DECKS;
   if (tcg === 'onepiece') return ONEPIECE_STARTER_DECKS;
-  return LORCANA_STARTER_DECKS;
+  return [];
 }
 
 /** Distinct release sets (used to group the picker by release). */
