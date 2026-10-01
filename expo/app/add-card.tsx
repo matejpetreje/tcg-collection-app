@@ -71,11 +71,11 @@ export default function AddCardScreen() {
 
   const deckColorLimit = presentation?.deckColorLimit ?? null;
   const hasMaxColors = deckColorLimit !== null && (deckInkColors?.length ?? 0) >= deckColorLimit;
-  const allowedInks = hasMaxColors ? deckInkColors ?? [] : (presentation?.deckColors ?? []);
+  const allowedInks = hasMaxColors ? deckInkColors ?? [] : (presentation?.filterColors ?? []);
 
   const availableInks = useMemo(() => {
     if (hasMaxColors) return deckInkColors ?? [];
-    return presentation?.deckColors ?? [];
+    return presentation?.filterColors ?? [];
   }, [hasMaxColors, deckInkColors, presentation]);
 
   const { data: cards, isLoading } = useQuery({
@@ -87,8 +87,12 @@ export default function AddCardScreen() {
               c.card_number, c.strength, c.willpower, c.lore,
               COALESCE(uc.qty, 0) as qty, COALESCE(uc.qty_foil, 0) as qty_foil,
               COALESCE(uc.qty_enchanted, 0) as qty_enchanted,
+              COALESCE(uc.qty_epic, 0) as qty_epic, COALESCE(uc.qty_promo, 0) as qty_promo,
+              COALESCE(uc.qty_iconic, 0) as qty_iconic, COALESCE(uc.qty_play, 0) as qty_play,
               i.image_url, i.thumbnail_url,
-              COALESCE(uc.qty, 0) + COALESCE(uc.qty_foil, 0) + COALESCE(uc.qty_enchanted, 0) as total_owned,
+              COALESCE(uc.qty, 0) + COALESCE(uc.qty_foil, 0) + COALESCE(uc.qty_enchanted, 0)
+              + COALESCE(uc.qty_epic, 0) + COALESCE(uc.qty_promo, 0)
+              + COALESCE(uc.qty_iconic, 0) + COALESCE(uc.qty_play, 0) as total_owned,
               s.name as set_name, s.release_date
        FROM cards c
        LEFT JOIN user_collection uc ON uc.card_id = c.id
@@ -102,7 +106,7 @@ export default function AddCardScreen() {
         sql += ` AND c.name LIKE ?`;
         params.push(`%${search.trim()}%`);
       } else {
-        sql += ` AND (COALESCE(uc.qty, 0) + COALESCE(uc.qty_foil, 0) + COALESCE(uc.qty_enchanted, 0)) > 0`;
+        sql += ` AND (COALESCE(uc.qty, 0) + COALESCE(uc.qty_foil, 0) + COALESCE(uc.qty_enchanted, 0) + COALESCE(uc.qty_epic, 0) + COALESCE(uc.qty_promo, 0) + COALESCE(uc.qty_iconic, 0) + COALESCE(uc.qty_play, 0)) > 0`;
       }
 
       if (filterInk) {
