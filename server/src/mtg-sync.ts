@@ -1,7 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { parser } from 'stream-json';
-import { streamArray } from 'stream-json/streamers/StreamArray.js';
+import StreamJson from 'stream-json';
+import StreamArrayModule from 'stream-json/streamers/StreamArray.js';
+
+const { parser } = StreamJson;
+const { streamArray } = StreamArrayModule;
 import { db, getMeta, setMeta, withTransaction } from './db.js';
 import { config } from './config.js';
 import { downloadBulkFile, getDefaultCardsBulkMeta } from './scryfall.js';
