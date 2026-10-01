@@ -184,8 +184,16 @@ async function importBulk(filePath: string, updatedAt: string): Promise<number> 
 }
 
 async function downloadFile(url: string, dest: string): Promise<void> {
-  const response = await fetch(url);
-  if (!response.ok || !response.body) throw new Error(`Image HTTP ${response.status}`);
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': config.scryfallUserAgent,
+      Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+    },
+  });
+  if (!response.ok || !response.body) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`Image HTTP ${response.status}${body ? `: ${body.slice(0, 120)}` : ''}`);
+  }
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   const temp = `${dest}.part`;
   const file = fs.createWriteStream(temp);
