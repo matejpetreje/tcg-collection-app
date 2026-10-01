@@ -7,8 +7,10 @@ const DOTGG_API_BASE = 'https://api.dotgg.gg/cgfw';
 const CACHE_DURATION_MS = 24 * 60 * 60 * 1000;
 
 /** Map our internal TCG id to the dotgg.gg `game` query param. */
-function dotggGameParam(tcg: TCGId | null | undefined): string {
-  return tcg === 'onepiece' ? 'onepiece' : 'lorcana';
+function dotggGameParam(tcg: TCGId | null | undefined): 'lorcana' | 'onepiece' | null {
+  if (tcg === 'lorcana') return 'lorcana';
+  if (tcg === 'onepiece') return 'onepiece';
+  return null;
 }
 
 export interface DotggPriceData {
@@ -86,6 +88,8 @@ export function buildDotggCardId(
     return base;
   }
 
+  if (tcg !== 'lorcana') return null;
+
   // Lorcana: dotgg uses `SSS-NNN` (zero-padded set number + card number).
   const setNum = getSetNumber(setName);
   if (setNum === null || !cardNumber) return null;
@@ -107,6 +111,7 @@ function parsePrice(val: string | null | undefined): number | null {
 async function fetchDotggPrices(dotggCardId: string, tcg: TCGId | null | undefined): Promise<DotggPriceData | null> {
   try {
     const game = dotggGameParam(tcg);
+    if (!game) return null;
     const url = `${DOTGG_API_BASE}/getcardprices?game=${game}&cardid=${encodeURIComponent(dotggCardId)}`;
     console.log(`[DotGG] Fetching prices for: ${dotggCardId} (game=${game})`);
 
@@ -226,6 +231,10 @@ export async function fetchAndCacheDotggPrice(
   cardNumber: string | null | undefined,
   tcg: TCGId | null | undefined = 'lorcana',
 ): Promise<DotggPriceData | null> {
+  if (!dotggGameParam(tcg)) {
+    return null;
+  }
+
   await ensureDotggTable(db);
 
   const cached = await getCachedDotggPrice(db, cardId);
