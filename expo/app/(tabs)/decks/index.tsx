@@ -10,6 +10,7 @@ import { safeQuery, safeRun } from '@/utils/database';
 import EmptyState from '@/components/EmptyState';
 import { getStarterDecks, getStarterDeckSets } from '@/constants/starterDecks';
 import { useTCG } from '@/providers/TCGProvider';
+import { getTCGPresentation } from '@/tcg/presentation';
 import { fetchTrendingDecks } from '@/utils/lorcana-decks-api';
 import type { DeckWithStats, PurchasedStarterDeck } from '@/types/database';
 import type { StarterDeck } from '@/constants/starterDecks';
@@ -17,6 +18,7 @@ import type { StarterDeck } from '@/constants/starterDecks';
 export default function DecksScreen() {
   const { db, isReady } = useDatabase();
   const { tcg } = useTCG();
+  const presentation = tcg ? getTCGPresentation(tcg) : null;
   const router = useRouter();
   const starterDecks = getStarterDecks(tcg);
   const starterDeckSets = getStarterDeckSets(tcg);
@@ -28,7 +30,8 @@ export default function DecksScreen() {
   const [customInkProfile, setCustomInkProfile] = useState<string>('');
   const [showPurchased, setShowPurchased] = useState<boolean>(false);
   const [showTrending, setShowTrending] = useState<boolean>(false);
-  const showCommunity = tcg === 'lorcana';
+  const showCommunity = presentation?.showCommunityDecks === true;
+  const showStarterFeatures = presentation?.showStarterDecks === true;
 
   const { data: trendingDecks, isLoading: trendingLoading } = useQuery({
     queryKey: ['lorcana-trending-decks'],
@@ -38,7 +41,7 @@ export default function DecksScreen() {
   });
 
   const { data: decks, isLoading } = useQuery({
-    queryKey: ['decks', !!db],
+    queryKey: ['decks', tcg, !!db],
     queryFn: async () => {
       if (!db) return [];
       return safeQuery<DeckWithStats>(
@@ -58,7 +61,7 @@ export default function DecksScreen() {
   });
 
   const { data: purchasedDecks } = useQuery({
-    queryKey: ['purchased-starter-decks', !!db],
+    queryKey: ['purchased-starter-decks', tcg, !!db],
     queryFn: async () => {
       if (!db) return [];
       return safeQuery<PurchasedStarterDeck>(
@@ -66,7 +69,7 @@ export default function DecksScreen() {
         'SELECT * FROM purchased_starter_decks ORDER BY purchased_at DESC'
       );
     },
-    enabled: isReady && !!db,
+    enabled: isReady && !!db && showStarterFeatures,
   });
 
   const purchasedIds = new Set(purchasedDecks?.map(d => d.id) ?? []);
@@ -404,54 +407,56 @@ export default function DecksScreen() {
         <Text style={styles.addButtonText}>New Deck</Text>
       </TouchableOpacity>
 
-      <View style={styles.purchasedSection}>
-          <TouchableOpacity
-            style={styles.purchasedHeader}
-            onPress={() => setShowPurchased(!showPurchased)}
-            activeOpacity={0.7}
-          >
-            <Package size={18} color={Colors.accent} />
-            <Text style={styles.purchasedTitle}>Purchased Starter Decks</Text>
-            <View style={styles.purchasedCountBadge}>
-              <Text style={styles.purchasedCountText}>{purchasedCount}</Text>
-            </View>
-            <View style={{ flex: 1 }} />
-            {showPurchased ? (
-              <ChevronUp size={16} color={Colors.textMuted} />
-            ) : (
-              <ChevronDown size={16} color={Colors.textMuted} />
-            )}
-          </TouchableOpacity>
-
-          {showPurchased && (
-            <View style={styles.purchasedContent}>
-              <ScrollView style={styles.purchasedScroll} nestedScrollEnabled showsVerticalScrollIndicator={false}>
-                {purchasedDecks?.map(renderPurchasedDeck)}
-                {purchasedCount === 0 && (
-                  <Text style={styles.noPurchasedText}>No starter decks added yet</Text>
-                )}
-              </ScrollView>
-              <View style={styles.purchasedActions}>
-                <TouchableOpacity
-                  style={styles.addStarterBtn}
-                  onPress={() => setShowStarterModal(true)}
-                  activeOpacity={0.7}
-                >
-                  <Plus size={16} color={Colors.primary} />
-                  <Text style={styles.addStarterBtnText}>Add Starter Deck</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.addCustomBtn}
-                  onPress={() => setShowCustomModal(true)}
-                  activeOpacity={0.7}
-                >
-                  <Edit3 size={16} color={Colors.accent} />
-                  <Text style={styles.addCustomBtnText}>Custom Deck</Text>
-                </TouchableOpacity>
+      {showStarterFeatures && (
+        <View style={styles.purchasedSection}>
+            <TouchableOpacity
+              style={styles.purchasedHeader}
+              onPress={() => setShowPurchased(!showPurchased)}
+              activeOpacity={0.7}
+            >
+              <Package size={18} color={Colors.accent} />
+              <Text style={styles.purchasedTitle}>Purchased Starter Decks</Text>
+              <View style={styles.purchasedCountBadge}>
+                <Text style={styles.purchasedCountText}>{purchasedCount}</Text>
               </View>
-            </View>
-          )}
-        </View>
+              <View style={{ flex: 1 }} />
+              {showPurchased ? (
+                <ChevronUp size={16} color={Colors.textMuted} />
+              ) : (
+                <ChevronDown size={16} color={Colors.textMuted} />
+              )}
+            </TouchableOpacity>
+  
+            {showPurchased && (
+              <View style={styles.purchasedContent}>
+                <ScrollView style={styles.purchasedScroll} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                  {purchasedDecks?.map(renderPurchasedDeck)}
+                  {purchasedCount === 0 && (
+                    <Text style={styles.noPurchasedText}>No starter decks added yet</Text>
+                  )}
+                </ScrollView>
+                <View style={styles.purchasedActions}>
+                  <TouchableOpacity
+                    style={styles.addStarterBtn}
+                    onPress={() => setShowStarterModal(true)}
+                    activeOpacity={0.7}
+                  >
+                    <Plus size={16} color={Colors.primary} />
+                    <Text style={styles.addStarterBtnText}>Add Starter Deck</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.addCustomBtn}
+                    onPress={() => setShowCustomModal(true)}
+                    activeOpacity={0.7}
+                  >
+                    <Edit3 size={16} color={Colors.accent} />
+                    <Text style={styles.addCustomBtnText}>Custom Deck</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
+      )}
 
       {showCommunity && (
         <View style={styles.purchasedSection}>
@@ -552,8 +557,8 @@ export default function DecksScreen() {
         testID="decks-list"
       />
 
-      {renderStarterDeckModal()}
-      {renderCustomDeckModal()}
+      {showStarterFeatures ? renderStarterDeckModal() : null}
+      {showStarterFeatures ? renderCustomDeckModal() : null}
     </View>
   );
 }
