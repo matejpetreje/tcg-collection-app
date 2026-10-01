@@ -9,8 +9,25 @@ import { fetchAllMtgCards, type MtgCatalogCard } from '@/utils/mtg-api';
 import type { TCGId } from '@/constants/tcgs';
 import { getTCGDatabaseFile } from '@/tcg/registry';
 
-const dbInstances: Record<string, SQLite.SQLiteDatabase> = {};
-const dbOpening: Record<string, Promise<SQLite.SQLiteDatabase> | undefined> = {};
+interface DatabaseRuntimeState {
+  dbInstances: Record<string, SQLite.SQLiteDatabase>;
+  dbOpening: Record<string, Promise<SQLite.SQLiteDatabase> | undefined>;
+}
+
+const runtimeGlobal = globalThis as typeof globalThis & {
+  __tcgCollectionDatabaseRuntime?: DatabaseRuntimeState;
+};
+
+// Keep the database registry on globalThis so Expo Web Fast Refresh / HMR does not
+// create a second SQLite OPFS Access Handle for a database that is already open.
+const databaseRuntime = runtimeGlobal.__tcgCollectionDatabaseRuntime ?? {
+  dbInstances: {},
+  dbOpening: {},
+};
+runtimeGlobal.__tcgCollectionDatabaseRuntime = databaseRuntime;
+
+const dbInstances = databaseRuntime.dbInstances;
+const dbOpening = databaseRuntime.dbOpening;
 
 export async function closeAllDatabases(): Promise<void> {
   const entries = Object.entries(dbInstances);
