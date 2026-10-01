@@ -141,18 +141,20 @@ export default function CollectionScreen() {
     }
     if (filters.rarities.length > 0) {
       const rarityPlaceholders = filters.rarities.map(() => '?').join(',');
-      const variantMap: Record<string, string> = {
-        'Epic': 'COALESCE(uc.qty_epic, 0) > 0',
-        'Enchanted': 'COALESCE(uc.qty_enchanted, 0) > 0',
-        'Promo': 'COALESCE(uc.qty_promo, 0) > 0',
-        'Iconic': 'COALESCE(uc.qty_iconic, 0) > 0',
-        'Play': 'COALESCE(uc.qty_play, 0) > 0',
-      };
-      const variantConditions = filters.rarities
-        .map(r => variantMap[r])
-        .filter(Boolean);
-      if (variantConditions.length > 0) {
-        sql += ` AND (c.rarity IN (${rarityPlaceholders}) OR ${variantConditions.join(' OR ')})`;
+      if (isLorcana) {
+        const variantMap: Record<string, string> = {
+          'Epic': 'COALESCE(uc.qty_epic, 0) > 0',
+          'Enchanted': 'COALESCE(uc.qty_enchanted, 0) > 0',
+          'Promo': 'COALESCE(uc.qty_promo, 0) > 0',
+          'Iconic': 'COALESCE(uc.qty_iconic, 0) > 0',
+          'Play': 'COALESCE(uc.qty_play, 0) > 0',
+        };
+        const variantConditions = filters.rarities.map(r => variantMap[r]).filter(Boolean);
+        if (variantConditions.length > 0) {
+          sql += ` AND (c.rarity IN (${rarityPlaceholders}) OR ${variantConditions.join(' OR ')})`;
+        } else {
+          sql += ` AND c.rarity IN (${rarityPlaceholders})`;
+        }
       } else {
         sql += ` AND c.rarity IN (${rarityPlaceholders})`;
       }
@@ -174,7 +176,7 @@ export default function CollectionScreen() {
       sql += ` AND c.lore IN (${filters.lives.map(() => '?').join(',')})`;
       params.push(...filters.lives);
     }
-    if (filters.variantTypes.length > 0) {
+    if (isLorcana && filters.variantTypes.length > 0) {
       const variantMap: Record<string, string> = {
         'Classic': 'COALESCE(uc.qty, 0) > 0',
         'Foil': 'COALESCE(uc.qty_foil, 0) > 0',
@@ -203,7 +205,7 @@ export default function CollectionScreen() {
     }
 
     return { sql, params };
-  }, [filters, isOnePiece, isYugioh]);
+  }, [filters, isLorcana, isOnePiece, isYugioh]);
 
   const queryClient = useQueryClient();
 
@@ -303,9 +305,9 @@ export default function CollectionScreen() {
   const hasActiveFilters = useMemo(() => {
     return filters.inkColors.length > 0 || filters.cardTypes.length > 0 ||
       filters.rarities.length > 0 || filters.setCodes.length > 0 ||
-      (!isOnePiece && filters.variantTypes.length > 0) || filters.onlyOwned || filters.onlyMissing ||
+      (isLorcana && filters.variantTypes.length > 0) || filters.onlyOwned || filters.onlyMissing ||
       filters.strengths.length > 0 || filters.counters.length > 0 || filters.lives.length > 0;
-  }, [filters, isOnePiece]);
+  }, [filters, isLorcana]);
 
   const visibleCards = useMemo(() => (cards ?? []).slice(0, visibleLimit), [cards, visibleLimit]);
 
@@ -643,7 +645,7 @@ export default function CollectionScreen() {
                 onToggle={(item) => toggleFilterItem('rarities', item)}
                 colorMap={Colors.rarity}
               />
-              {!isOnePiece && (
+              {isLorcana && (
                 <FilterSection
                   title="Variant Type"
                   items={['Classic', 'Foil', 'Epic', 'Enchanted', 'Promo', 'Iconic', 'Play']}
