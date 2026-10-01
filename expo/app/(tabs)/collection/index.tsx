@@ -19,6 +19,7 @@ import type { CardWithDetails, CollectionFilters } from '@/types/database';
 const PAGE_SIZE = 40;
 const COLLECTION_VIEW_KEY = 'collection_view_mode';
 const COLLECTION_COLUMNS_KEY = 'collection_cards_per_row';
+const COLLECTION_PRICES_KEY = 'collection_show_prices';
 type CollectionView = 'grid-minimal' | 'grid-detailed' | 'list';
 
 const INK_ORDER = ['Amber', 'Amethyst', 'Emerald', 'Ruby', 'Sapphire', 'Steel'];
@@ -64,15 +65,18 @@ export default function CollectionScreen() {
   const [editLocked, setEditLocked] = useState<boolean>(true);
   const [viewMode, setViewMode] = useState<CollectionView>('grid-detailed');
   const [cardsPerRow, setCardsPerRow] = useState<string>('auto');
+  const [showPrices, setShowPrices] = useState<boolean>(false);
 
   useFocusEffect(useCallback(() => {
     void (async () => {
-      const [savedView, savedColumns] = await Promise.all([
+      const [savedView, savedColumns, savedPrices] = await Promise.all([
         AsyncStorage.getItem(COLLECTION_VIEW_KEY),
         AsyncStorage.getItem(COLLECTION_COLUMNS_KEY),
+        AsyncStorage.getItem(COLLECTION_PRICES_KEY),
       ]);
       if (savedView === 'grid-minimal' || savedView === 'grid-detailed' || savedView === 'list') setViewMode(savedView);
       if (savedColumns) setCardsPerRow(savedColumns);
+      setShowPrices(savedPrices === 'true');
     })();
   }, []));
 
@@ -81,10 +85,10 @@ export default function CollectionScreen() {
     if (mode === 'totalCopies') {
       sql = `SELECT COALESCE(SUM(COALESCE(uc.qty, 0) + COALESCE(uc.qty_foil, 0) + COALESCE(uc.qty_enchanted, 0) + COALESCE(uc.qty_epic, 0) + COALESCE(uc.qty_promo, 0) + COALESCE(uc.qty_iconic, 0) + COALESCE(uc.qty_play, 0)), 0) as total_copies`;
     } else if (mode === 'count') {
-      sql = 'SELECT COUNT(DISTINCT c.id) as count';
+      sql = 'SELECT COUNT(DISTINCT c.card_number) as count';
     } else {
       sql = `SELECT DISTINCT c.id, c.name, c.version, c.ink_color, c.cost, c.rarity, c.type, c.set_code,
-                c.card_number, c.strength, c.willpower, c.lore, c.inkable,
+                c.card_number, c.strength, c.willpower, c.lore, c.inkable, c.market_price, c.inventory_price,
                 COALESCE(uc.qty, 0) as qty, COALESCE(uc.qty_foil, 0) as qty_foil,
                 COALESCE(uc.qty_enchanted, 0) as qty_enchanted,
                 COALESCE(uc.qty_epic, 0) as qty_epic, COALESCE(uc.qty_promo, 0) as qty_promo,
@@ -99,7 +103,17 @@ export default function CollectionScreen() {
              LEFT JOIN user_collection uc ON uc.card_id = c.id
              LEFT JOIN images i ON i.card_id = c.id
              LEFT JOIN sets s ON s.set_code = c.set_code
-             WHERE 1=1`;
+             WHERE 1=1
+             AND c.id = (
+               SELECT c2.id FROM cards c2
+               WHERE c2.card_number = c.card_number
+               ORDER BY CASE
+                 WHEN c2.unique_id = c2.card_number THEN 0
+                 WHEN c2.unique_id NOT LIKE '%_p%' THEN 1
+                 ELSE 2
+               END, c2.id
+               LIMIT 1
+             )`;
 
     const params: unknown[] = [];
 
@@ -371,17 +385,30 @@ export default function CollectionScreen() {
             <Text style={styles.gridMeta} numberOfLines={1}>
               {item.set_code ?? ''}{item.card_number ? ` · #${item.card_number}` : ''}
             </Text>
-            {!editLocked ? (
+            {showPrices && item.market_price != null ? (
+              <Text style={styles.gridPrice}>${item.market_price.toFixed(2)}</Text>
+            ) : null}
+            {item.qty <= 0 ? (
+              <TouchableOpacity
+                style={styles.addCollectionBtn}
+                onPress={(event) => {
+                  event.stopPropagation();
+                  void updateClassicQty(item, 1);
+                }}
+              >
+                <Plus size={14} color={Colors.background} />
+                <Text style={styles.addCollectionBtnText}>Add to Collection</Text>
+              </TouchableOpacity>
+            ) : (
               <View style={styles.gridQtyRow}>
                 <TouchableOpacity
-                  style={[styles.gridQtyBtn, item.qty <= 0 && styles.gridQtyBtnDisabled]}
+                  style={styles.gridQtyBtn}
                   onPress={(event) => {
                     event.stopPropagation();
                     void updateClassicQty(item, -1);
                   }}
-                  disabled={item.qty <= 0}
                 >
-                  <Minus size={14} color={item.qty <= 0 ? Colors.textMuted : Colors.text} />
+                  <Minus size={14} color={Colors.text} />
                 </TouchableOpacity>
                 <View style={styles.gridQtyValue}>
                   <Text style={styles.gridQtyText}>{item.qty}</Text>
@@ -396,16 +423,12 @@ export default function CollectionScreen() {
                   <Plus size={14} color={Colors.primary} />
                 </TouchableOpacity>
               </View>
-            ) : (item.total_owned ?? 0) > 0 ? (
-              <View style={styles.gridOwnedBadge}>
-                <Text style={styles.gridOwnedText}>{item.total_owned}</Text>
-              </View>
-            ) : null}
+            )}
           </View>
         ) : null}
       </TouchableOpacity>
     );
-  }, [editLocked, gridCardWidth, router, updateClassicQty, viewMode]);
+  }, [gridCardWidth, router, showPrices, updateClassicQty, viewMode]);
 
   const keyExtractor = useCallback((item: CardWithDetails) => item.id.toString(), []);
 
@@ -972,6 +995,27 @@ const styles = StyleSheet.create({
   gridMeta: {
     fontSize: 10,
     color: Colors.textMuted,
+  },
+  gridPrice: {
+    marginTop: 4,
+    color: Colors.primaryLight,
+    fontSize: 13,
+    fontWeight: '800' as const,
+  },
+  addCollectionBtn: {
+    marginTop: 6,
+    height: 30,
+    borderRadius: 7,
+    backgroundColor: Colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  addCollectionBtnText: {
+    color: Colors.background,
+    fontSize: 11,
+    fontWeight: '800' as const,
   },
   gridQtyRow: {
     flexDirection: 'row',
