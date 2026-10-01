@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 import * as SQLite from 'expo-sqlite';
 import createContextHook from '@nkzw/create-context-hook';
 import { useQueryClient } from '@tanstack/react-query';
-import { getDatabase, closeDatabase, closeAllDatabases, initializeTables, checkCatalogExists, getCardCount, syncCardsFromApi } from '@/utils/database';
+import { getDatabase, closeAllDatabases, initializeTables, checkCatalogExists, getCardCount, syncCardsFromApi } from '@/utils/database';
 import { useTCG } from '@/providers/TCGProvider';
 import type { TCGId } from '@/constants/tcgs';
 
@@ -60,7 +60,6 @@ export const [DatabaseProvider, useDatabase] = createContextHook((): DatabaseSta
       return;
     }
     let mounted = true;
-    const previousTcg = activeTcgRef.current;
     activeTcgRef.current = tcg;
 
     // Never expose the previous game's database/catalog while the selected TCG is changing.
@@ -72,13 +71,13 @@ export const [DatabaseProvider, useDatabase] = createContextHook((): DatabaseSta
     void queryClient.invalidateQueries();
     (async () => {
       try {
-        // expo-sqlite web uses an exclusive OPFS access handle. Release the
-        // previous game's handle before opening the next database so a later
-        // web reload cannot collide with stale handles.
-        if (previousTcg && previousTcg !== tcg) {
-          await queryClient.cancelQueries();
-          await closeDatabase(previousTcg);
-        }
+        // Keep one open SQLite handle per TCG for the lifetime of the page.
+        // React Query work from the previous screen can still be finishing after a
+        // TCG switch. Closing that database here makes those in-flight queries hit
+        // "Database not found - nativeDatabaseId[...]". getDatabase() already
+        // de-duplicates handles per database file, and page-exit cleanup closes all
+        // handles when the web app is actually leaving.
+        await queryClient.cancelQueries();
 
         console.log(`[Provider] Initializing database for TCG=${tcg}...`);
         const database = await getDatabase(tcg);
