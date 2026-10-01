@@ -150,6 +150,10 @@ export interface WishlistWithCard extends WishlistItem {
   qty: number;
   qty_foil: number;
   qty_enchanted: number;
+  qty_epic: number;
+  qty_promo: number;
+  qty_iconic: number;
+  qty_play: number;
 }
 
 export interface DeckCardWithDetails extends DeckCard {
