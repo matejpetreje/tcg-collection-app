@@ -6,6 +6,7 @@ import { Heart, Star, Check } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { useDatabase } from '@/providers/DatabaseProvider';
+import { useTCG } from '@/providers/TCGProvider';
 import { safeQuery, safeRun } from '@/utils/database';
 import CardImage from '@/components/CardImage';
 import EmptyState from '@/components/EmptyState';
@@ -16,19 +17,22 @@ const PRIORITY_COLORS: Record<number, string> = { 1: Colors.danger, 2: Colors.wa
 
 export default function WishlistScreen() {
   const { db, isReady, hasCatalog } = useDatabase();
+  const { tcg } = useTCG();
   const router = useRouter();
   const queryClient = useQueryClient();
   const [filterPriority, setFilterPriority] = useState<number | null>(null);
   const [filterMissing, setFilterMissing] = useState<boolean>(false);
 
   const { data: items, isLoading } = useQuery({
-    queryKey: ['wishlist', filterPriority, filterMissing, !!db],
+    queryKey: ['wishlist', tcg, filterPriority, filterMissing, !!db],
     queryFn: async () => {
       if (!db) return [];
       let sql = `SELECT w.*, c.name, c.ink_color, c.cost, c.rarity, c.set_code,
                         i.image_url, i.thumbnail_url,
                         COALESCE(uc.qty, 0) as qty, COALESCE(uc.qty_foil, 0) as qty_foil,
-                        COALESCE(uc.qty_enchanted, 0) as qty_enchanted
+                        COALESCE(uc.qty_enchanted, 0) as qty_enchanted,
+                        COALESCE(uc.qty_epic, 0) as qty_epic, COALESCE(uc.qty_promo, 0) as qty_promo,
+                        COALESCE(uc.qty_iconic, 0) as qty_iconic, COALESCE(uc.qty_play, 0) as qty_play
                  FROM wishlist w
                  JOIN cards c ON c.id = w.card_id
                  LEFT JOIN images i ON i.card_id = w.card_id
@@ -41,7 +45,7 @@ export default function WishlistScreen() {
         params.push(filterPriority);
       }
       if (filterMissing) {
-        sql += ' AND (COALESCE(uc.qty, 0) + COALESCE(uc.qty_foil, 0) + COALESCE(uc.qty_enchanted, 0)) = 0';
+        sql += ' AND (COALESCE(uc.qty, 0) + COALESCE(uc.qty_foil, 0) + COALESCE(uc.qty_enchanted, 0) + COALESCE(uc.qty_epic, 0) + COALESCE(uc.qty_promo, 0) + COALESCE(uc.qty_iconic, 0) + COALESCE(uc.qty_play, 0)) = 0';
       }
       sql += ' ORDER BY w.priority ASC, c.name ASC';
       return safeQuery<WishlistWithCard>(db, sql, params);
@@ -87,7 +91,8 @@ export default function WishlistScreen() {
   const renderItem = useCallback(({ item }: { item: WishlistWithCard }) => {
     const inkColor = Colors.ink[item.ink_color ?? ''] ?? Colors.textMuted;
     const priorityColor = PRIORITY_COLORS[item.priority] ?? Colors.textMuted;
-    const totalOwned = item.qty + item.qty_foil + item.qty_enchanted;
+    const totalOwned = item.qty + item.qty_foil + item.qty_enchanted
+      + (item.qty_epic ?? 0) + (item.qty_promo ?? 0) + (item.qty_iconic ?? 0) + (item.qty_play ?? 0);
 
     return (
       <TouchableOpacity
@@ -99,7 +104,7 @@ export default function WishlistScreen() {
         <View style={styles.cardInfo}>
           <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
           <View style={styles.cardMeta}>
-            <View style={[styles.inkDot, { backgroundColor: inkColor }]} />
+            {item.ink_color ? <View style={[styles.inkDot, { backgroundColor: inkColor }]} /> : null}
             {item.cost !== null && <Text style={styles.costText}>{item.cost}</Text>}
             <Text style={styles.setText}>{item.set_code ?? ''}</Text>
           </View>
