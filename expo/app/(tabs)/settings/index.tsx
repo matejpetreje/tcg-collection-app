@@ -88,6 +88,13 @@ export default function SettingsScreen() {
         `SELECT uc.*, c.unique_id, c.set_code, c.card_number
          FROM user_collection uc LEFT JOIN cards c ON c.id = uc.card_id`
       );
+      const printingCollection = await safeQuery(
+        db,
+        `SELECT pc.*, c.unique_id, c.card_number
+         FROM card_printing_collection pc
+         LEFT JOIN cards c ON c.id = pc.card_id
+         WHERE pc.qty > 0`
+      );
       const decksData = await safeQuery(db, 'SELECT * FROM decks');
       const deckCards = await safeQuery(
         db,
@@ -114,10 +121,11 @@ export default function SettingsScreen() {
       }
 
       const exportObj = {
-        version: '1.3',
+        version: '1.4',
         tcg: tcg ?? 'lorcana',
         exported_at: new Date().toISOString(),
         user_collection: collection,
+        card_printing_collection: printingCollection,
         decks: decksData,
         deck_cards: deckCards,
         wishlist,
@@ -271,6 +279,36 @@ export default function SettingsScreen() {
         }
       }
 
+      if (data.card_printing_collection?.length) {
+        for (const item of data.card_printing_collection) {
+          const newCardId = resolveCardId(item);
+          if (newCardId == null || !item.printing_key || !item.set_code) {
+            skippedCollection++;
+            continue;
+          }
+          try {
+            await safeRun(
+              db,
+              `INSERT OR REPLACE INTO card_printing_collection
+                (card_id, printing_key, set_code, set_name, rarity, qty, note, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+              [
+                newCardId,
+                item.printing_key,
+                item.set_code,
+                item.set_name ?? null,
+                item.rarity ?? null,
+                item.qty ?? 0,
+                item.note ?? null,
+              ]
+            );
+          } catch (e) {
+            failed++;
+            console.log('[Import] card_printing_collection insert failed:', e);
+          }
+        }
+      }
+
       const validDeckIds = new Set<number>();
       if (data.decks?.length) {
         for (const deck of data.decks) {
@@ -367,7 +405,7 @@ export default function SettingsScreen() {
       }
 
       const skippedTotal = skippedCollection + skippedDeckCards + skippedWishlist + skippedCardTags;
-      const notes = `Imported ${data.user_collection?.length ?? 0} collection / ${data.decks?.length ?? 0} decks. Skipped ${skippedTotal} (no matching cards in catalog). Failed: ${failed}.`;
+      const notes = `Imported ${data.user_collection?.length ?? 0} base collection rows / ${data.card_printing_collection?.length ?? 0} printing rows / ${data.decks?.length ?? 0} decks. Skipped ${skippedTotal} (no matching cards in catalog). Failed: ${failed}.`;
 
       // Detect catastrophic skip (old v1.2 export + catalog has shifted AUTOINCREMENT ids).
       const totalRows = (data.user_collection?.length ?? 0) + (data.deck_cards?.length ?? 0) + (data.wishlist?.length ?? 0) + (data.card_tags?.length ?? 0);
