@@ -338,7 +338,7 @@ export default function CollectionScreen() {
 
   const renderCard = useCallback(({ item }: { item: CardWithDetails }) => (
     <CardListItem card={item} showQuickAdd={!editLocked && !isYugioh} />
-  ), [editLocked]);
+  ), [editLocked, isYugioh]);
 
   const updateClassicQty = useCallback(async (card: CardWithDetails, delta: 1 | -1) => {
     if (!db || (delta < 0 && card.qty <= 0)) return;
