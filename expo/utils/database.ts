@@ -5,7 +5,7 @@ import { CATALOG_TABLES_SQL, USER_TABLES_SQL, USER_INDEXES_SQL, VIEWS_SQL } from
 import { fetchAllCards } from '@/utils/api';
 import { fetchAllOnePieceCards, type OnePieceApiCard } from '@/utils/onepiece-api';
 import { fetchAllYugiohCards, type YugiohApiCard } from '@/utils/yugioh-api';
-import { fetchAllMtgPrintings, type ScryfallCard } from '@/utils/mtg-api';
+import { fetchAllMtgCards, type MtgCatalogCard } from '@/utils/mtg-api';
 import type { TCGId } from '@/constants/tcgs';
 import { getTCGDatabaseFile } from '@/tcg/registry';
 
@@ -829,93 +829,33 @@ function mtgBaseType(typeLine: string | null | undefined): string | null {
   return order.find(t => type.includes(t)) ?? (type.split('—')[0]?.trim().split(' ').pop() || null);
 }
 
-function mtgImage(card: ScryfallCard): { image: string | null; thumb: string | null } {
-  const uris = card.image_uris ?? card.card_faces?.find(f => f.image_uris)?.image_uris;
-  return {
-    image: uris?.normal ?? uris?.large ?? uris?.png ?? null,
-    thumb: uris?.small ?? uris?.normal ?? uris?.large ?? null,
-  };
-}
-
-function mtgOracleText(card: ScryfallCard): string | null {
-  if (card.oracle_text) return card.oracle_text;
-  const parts = (card.card_faces ?? [])
-    .map(face => face.oracle_text?.trim())
-    .filter((v): v is string => !!v);
-  return parts.length > 0 ? parts.join('\n//\n') : null;
-}
-
-function mtgManaCost(card: ScryfallCard): string | null {
-  if (card.mana_cost) return card.mana_cost;
-  const parts = (card.card_faces ?? [])
-    .map(face => face.mana_cost?.trim())
-    .filter((v): v is string => !!v);
-  return parts.length > 0 ? parts.join(' // ') : null;
-}
-
-function mtgFaceStat(card: ScryfallCard, key: 'power' | 'toughness' | 'loyalty' | 'defense'): string | null {
-  const direct = card[key];
-  if (typeof direct === 'string' && direct.length > 0) return direct;
-  for (const face of card.card_faces ?? []) {
-    const value = face[key];
-    if (typeof value === 'string' && value.length > 0) return value;
-  }
-  return null;
-}
-
 async function syncMtg(
   db: SQLite.SQLiteDatabase,
   onProgress?: (current: number, total: number) => void
 ): Promise<number> {
-  const printings = await fetchAllMtgPrintings((current, total) => {
+  const cards: MtgCatalogCard[] = await fetchAllMtgCards((current, total) => {
     onProgress?.(current, total);
   });
-  console.log(`[Sync:MTG] Received ${printings.length} Scryfall printings`);
 
-  type MtgAggregate = {
-    oracleId: string;
-    name: string;
-    representative: ScryfallCard;
-    printings: ScryfallCard[];
-  };
+  console.log(`[Sync:MTG] Received ${cards.length} oracle cards from catalog server`);
 
-  const grouped = new Map<string, MtgAggregate>();
+  await db.execAsync('DELETE FROM subtypes;');
+  await db.execAsync('DELETE FROM abilities;');
+  await db.execAsync('DELETE FROM images;');
+
   const setsMap = new Map<string, { name: string; releaseDate: string | null }>();
-
-  for (const printing of printings) {
-    if (printing.digital) continue;
-    const oracleId = printing.oracle_id ?? printing.id;
-    const existing = grouped.get(oracleId);
-    if (!existing) {
-      grouped.set(oracleId, {
-        oracleId,
-        name: printing.name,
-        representative: printing,
-        printings: [printing],
-      });
-    } else {
-      existing.printings.push(printing);
-      const currentDate = existing.representative.released_at ?? '';
-      const candidateDate = printing.released_at ?? '';
-      if (candidateDate > currentDate) existing.representative = printing;
-    }
-
-    if (printing.set && printing.set_name) {
-      const current = setsMap.get(printing.set);
+  for (const card of cards) {
+    for (const printing of card.printings ?? []) {
+      if (!printing.set_code || !printing.set_name) continue;
+      const current = setsMap.get(printing.set_code);
       if (!current || (printing.released_at ?? '') > (current.releaseDate ?? '')) {
-        setsMap.set(printing.set, {
+        setsMap.set(printing.set_code, {
           name: printing.set_name,
           releaseDate: printing.released_at ?? null,
         });
       }
     }
   }
-
-  console.log(`[Sync:MTG] Grouped into ${grouped.size} oracle cards`);
-
-  await db.execAsync('DELETE FROM subtypes;');
-  await db.execAsync('DELETE FROM abilities;');
-  await db.execAsync('DELETE FROM images;');
 
   for (const [setCode, setInfo] of setsMap) {
     await db.runAsync(
@@ -927,7 +867,6 @@ async function syncMtg(
     );
   }
 
-  const cards = Array.from(grouped.values()).sort((a, b) => a.name.localeCompare(b.name));
   const total = cards.length;
   const BATCH_SIZE = 50;
   let inserted = 0;
@@ -936,40 +875,13 @@ async function syncMtg(
     const batch = cards.slice(i, i + BATCH_SIZE);
 
     await withSyncTransaction(db, async (txn) => {
-      for (const aggregate of batch) {
-        const card = aggregate.representative;
-        const uniqueId = `mtg-${aggregate.oracleId}`;
+      for (const card of batch) {
+        const uniqueId = `mtg-${card.oracle_id}`;
         const baseType = mtgBaseType(card.type_line);
-        const image = mtgImage(card);
-        const manaValue = card.cmc ?? null;
+        const manaValue = card.mana_value ?? null;
         const numericCost = manaValue != null && Number.isInteger(manaValue) ? manaValue : null;
-        const colorLabel = mtgColorLabel(card.color_identity ?? card.colors);
-        const oracleText = mtgOracleText(card);
-        const priceUsd = priceNumber(card.prices?.usd ?? null);
-        const foilUsd = priceNumber(card.prices?.usd_foil ?? card.prices?.usd_etched ?? null);
-
-        const printingData = aggregate.printings
-          .sort((a, b) => (b.released_at ?? '').localeCompare(a.released_at ?? ''))
-          .map(p => {
-            const pImage = mtgImage(p);
-            return {
-              scryfall_id: p.id,
-              set_code: p.set,
-              set_name: p.set_name,
-              collector_number: p.collector_number,
-              rarity: p.rarity,
-              released_at: p.released_at ?? null,
-              artist: p.artist ?? null,
-              illustration_id: p.illustration_id ?? null,
-              finishes: p.finishes ?? [],
-              promo: p.promo ?? false,
-              reprint: p.reprint ?? false,
-              prices: p.prices ?? null,
-              image_url: pImage.image,
-              thumbnail_url: pImage.thumb,
-              scryfall_uri: p.scryfall_uri ?? null,
-            };
-          });
+        const colorLabel = mtgColorLabel(card.color_identity.length > 0 ? card.color_identity : card.colors);
+        const representativePrinting = card.printings?.[0] ?? null;
 
         await txn.runAsync(
           `INSERT INTO cards (name, version, cost, ink_color, type, rarity, set_code, card_number,
@@ -980,8 +892,7 @@ async function syncMtg(
              name = excluded.name, version = excluded.version, cost = excluded.cost,
              ink_color = excluded.ink_color, type = excluded.type, rarity = excluded.rarity,
              set_code = excluded.set_code, card_number = excluded.card_number,
-             body_text = excluded.body_text, strength = excluded.strength,
-             willpower = excluded.willpower, classifications = excluded.classifications,
+             body_text = excluded.body_text, classifications = excluded.classifications,
              date_added = excluded.date_added, market_price = excluded.market_price,
              inventory_price = excluded.inventory_price, game_data = excluded.game_data`,
           [
@@ -991,9 +902,9 @@ async function syncMtg(
             colorLabel,
             baseType,
             card.rarity ? card.rarity.charAt(0).toUpperCase() + card.rarity.slice(1) : null,
-            card.set ?? null,
-            aggregate.oracleId,
-            oracleText,
+            card.set_code ?? null,
+            card.oracle_id,
+            card.oracle_text ?? null,
             null,
             null,
             null,
@@ -1005,44 +916,60 @@ async function syncMtg(
             null,
             card.released_at ?? null,
             null,
-            priceUsd,
-            foilUsd,
+            card.market_price ?? null,
+            card.foil_price ?? null,
             JSON.stringify({
-              oracle_id: aggregate.oracleId,
-              scryfall_id: card.id,
-              mana_cost: mtgManaCost(card),
-              mana_value: manaValue,
+              oracle_id: card.oracle_id,
+              mana_cost: card.mana_cost ?? null,
+              mana_value: card.mana_value ?? null,
               colors: card.colors ?? [],
               color_identity: card.color_identity ?? [],
               type_line: card.type_line ?? null,
-              oracle_text: oracleText,
-              collector_number: card.collector_number,
+              oracle_text: card.oracle_text ?? null,
               rarity: card.rarity ?? null,
-              power: mtgFaceStat(card, 'power'),
-              toughness: mtgFaceStat(card, 'toughness'),
-              loyalty: mtgFaceStat(card, 'loyalty'),
-              defense: mtgFaceStat(card, 'defense'),
+              power: card.power ?? null,
+              toughness: card.toughness ?? null,
+              loyalty: card.loyalty ?? null,
+              defense: card.defense ?? null,
               keywords: card.keywords ?? [],
               legalities: card.legalities ?? {},
               reserved: card.reserved ?? false,
-              set_code: card.set ?? null,
+              set_code: card.set_code ?? null,
               set_name: card.set_name ?? null,
               released_at: card.released_at ?? null,
               artist: card.artist ?? null,
-              prices: card.prices ?? null,
-              printings: printingData,
+              printings: (card.printings ?? []).map(p => ({
+                scryfall_id: p.scryfall_id,
+                set_code: p.set_code,
+                set_name: p.set_name,
+                collector_number: p.collector_number,
+                rarity: p.rarity,
+                released_at: p.released_at,
+                artist: p.artist,
+                finishes: p.finishes ?? [],
+                promo: p.promo,
+                reprint: p.reprint,
+                prices: p.prices ?? {},
+                image_url: p.image_url,
+                thumbnail_url: p.thumbnail_url,
+                scryfall_uri: p.scryfall_uri,
+              })),
             }),
           ]
         );
 
         const cardId = await getCardIdByUniqueId(txn, uniqueId);
-        if (cardId && image.image) {
+        if (cardId && (card.image_url || card.thumbnail_url)) {
           await txn.runAsync(
             `INSERT INTO images (card_id, image_url, thumbnail_url) VALUES (?, ?, ?)
              ON CONFLICT(card_id) DO UPDATE SET
                image_url = excluded.image_url,
                thumbnail_url = excluded.thumbnail_url`,
-            [cardId, image.image, image.thumb ?? image.image]
+            [
+              cardId,
+              card.image_url ?? card.thumbnail_url,
+              card.thumbnail_url ?? card.image_url,
+            ]
           );
         }
 
@@ -1057,6 +984,27 @@ async function syncMtg(
           }
         }
 
+        if (cardId && representativePrinting?.collector_number) {
+          await txn.runAsync(
+            `INSERT INTO card_printing_collection
+              (card_id, printing_key, set_code, set_name, rarity, qty, updated_at)
+             SELECT ?, ?, ?, ?, ?, 0, datetime('now')
+             WHERE NOT EXISTS (
+               SELECT 1 FROM card_printing_collection
+               WHERE card_id = ? AND printing_key = ?
+             )`,
+            [
+              cardId,
+              representativePrinting.scryfall_id,
+              representativePrinting.set_code,
+              representativePrinting.set_name,
+              representativePrinting.rarity,
+              cardId,
+              representativePrinting.scryfall_id,
+            ]
+          );
+        }
+
         inserted++;
       }
     });
@@ -1068,8 +1016,8 @@ async function syncMtg(
   }
 
   await db.runAsync(
-    "INSERT INTO import_log (imported_at, source, notes) VALUES (datetime('now'), 'Scryfall API', ?)",
-    [`Synced ${inserted} oracle cards from ${printings.length} paper printings`]
+    "INSERT INTO import_log (imported_at, source, notes) VALUES (datetime('now'), 'TCG Catalog Server / Scryfall', ?)",
+    [`Synced ${inserted} MTG oracle cards from central catalog`]
   );
   await db.runAsync(
     "INSERT INTO app_settings (key, value) VALUES ('last_sync', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
