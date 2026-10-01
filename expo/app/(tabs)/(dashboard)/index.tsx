@@ -65,6 +65,7 @@ interface InkDistItem {
 
 const RARITY_ORDER = ['Common', 'Uncommon', 'Rare', 'Super Rare', 'Legendary', 'Epic', 'Enchanted', 'Iconic', 'Promo', 'Play', 'Foil'];
 const TYPE_ORDER = ['Character', 'Action', 'Item', 'Song', 'Location'];
+const ONEPIECE_TYPE_ORDER = ['Leader', 'Character', 'Event', 'Stage', 'DON!!'];
 
 type DistMode = 'unique' | 'total';
 
@@ -88,6 +89,8 @@ export default function DashboardScreen() {
         .catch((e) => console.log('[Dashboard] tcg load error', e));
     }, [])
   );
+
+  const isOnePiece = currentTCG === 'onepiece';
 
   const currentTCGName = useMemo(() => {
     const t = TCGS.find((x) => x.id === currentTCG);
@@ -407,7 +410,8 @@ export default function DashboardScreen() {
          AND c.type IS NOT NULL
          GROUP BY c.type`
       );
-      const orderMap = new Map(TYPE_ORDER.map((v, i) => [v, i]));
+      const order = isOnePiece ? ONEPIECE_TYPE_ORDER : TYPE_ORDER;
+      const orderMap = new Map(order.map((v, i) => [v, i]));
       return rows.sort((a, b) => (orderMap.get(a.type) ?? 999) - (orderMap.get(b.type) ?? 999));
     },
     enabled: isReady && !!db && hasCatalog,
@@ -653,7 +657,7 @@ export default function DashboardScreen() {
         <View style={styles.sectionHeaderRow}>
           <View style={styles.sectionHeader}>
             <Palette size={18} color={Colors.primary} />
-            <Text style={styles.sectionTitle}>Ink Distribution</Text>
+            <Text style={styles.sectionTitle}>{isOnePiece ? 'Color Distribution' : 'Ink Distribution'}</Text>
           </View>
           <View style={styles.sectionHeaderRight}>
             {renderDistToggle(inkDistMode, setInkDistMode)}
