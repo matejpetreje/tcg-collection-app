@@ -1,10 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import StreamJson from 'stream-json';
-import StreamArrayModule from 'stream-json/streamers/StreamArray.js';
-
-const { parser } = StreamJson;
-const { streamArray } = StreamArrayModule;
+import readline from 'node:readline';
+import { createGunzip } from 'node:zlib';
 import { db, getMeta, setMeta, withTransaction } from './db.js';
 import { config } from './config.js';
 import { downloadBulkFile, getDefaultCardsBulkMeta } from './scryfall.js';
@@ -143,17 +140,35 @@ async function importBulk(filePath: string, updatedAt: string): Promise<number> 
     }
   });
 
-  const stream = fs.createReadStream(filePath)
-    .pipe(parser())
-    .pipe(streamArray());
+  if (filePath.endsWith('.jsonl.gz')) {
+    const input = fs.createReadStream(filePath).pipe(createGunzip());
+    const lines = readline.createInterface({
+      input,
+      crlfDelay: Infinity,
+    });
 
-  for await (const item of stream) {
-    batch.push(item.value as ScryfallCard);
-    if (batch.length >= 1000) {
-      flush(batch);
-      count += batch.length;
-      batch = [];
-      if (count % 10000 === 0) console.log(`[MTG Server] Imported ${count} printings`);
+    for await (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      batch.push(JSON.parse(trimmed) as ScryfallCard);
+      if (batch.length >= 1000) {
+        flush(batch);
+        count += batch.length;
+        batch = [];
+        if (count % 10000 === 0) console.log(`[MTG Server] Imported ${count} printings`);
+      }
+    }
+  } else {
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf8')) as ScryfallCard[];
+    for (const item of raw) {
+      batch.push(item);
+      if (batch.length >= 1000) {
+        flush(batch);
+        count += batch.length;
+        batch = [];
+        if (count % 10000 === 0) console.log(`[MTG Server] Imported ${count} printings`);
+      }
     }
   }
 
