@@ -200,7 +200,7 @@ export default function CollectionScreen() {
   const queryClient = useQueryClient();
 
   const { data: cards, isLoading } = useQuery({
-    queryKey: ['collection', filters, !!db],
+    queryKey: ['collection', tcg, filters, !!db],
     queryFn: async () => {
       if (!db) return [];
       const { sql, params } = buildQuery('list');
@@ -210,7 +210,7 @@ export default function CollectionScreen() {
   });
 
   const { data: totalCount } = useQuery({
-    queryKey: ['collection-count', filters, !!db],
+    queryKey: ['collection-count', tcg, filters, !!db],
     queryFn: async () => {
       if (!db) return 0;
       const { sql, params } = buildQuery('count');
@@ -221,7 +221,7 @@ export default function CollectionScreen() {
   });
 
   const { data: totalCopiesCount } = useQuery({
-    queryKey: ['collection-total-copies', filters, !!db],
+    queryKey: ['collection-total-copies', tcg, filters, !!db],
     queryFn: async () => {
       if (!db) return 0;
       const { sql, params } = buildQuery('totalCopies');
