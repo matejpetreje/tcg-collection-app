@@ -6,6 +6,7 @@ import { fetchAllCards } from '@/utils/api';
 import { fetchAllOnePieceCards, type OnePieceApiCard } from '@/utils/onepiece-api';
 import { fetchAllYugiohCards, type YugiohApiCard } from '@/utils/yugioh-api';
 import type { TCGId } from '@/constants/tcgs';
+import { getTCGDatabaseFile } from '@/tcg/registry';
 
 const dbInstances: Record<string, SQLite.SQLiteDatabase> = {};
 const dbOpening: Record<string, Promise<SQLite.SQLiteDatabase> | undefined> = {};
@@ -70,20 +71,7 @@ async function withSyncTransaction(
 }
 
 function dbFileForTCG(tcg: TCGId): string {
-  switch (tcg) {
-    case 'lorcana':
-      return 'lorcana_cards.db';
-    case 'onepiece':
-      return 'onepiece_cards.db';
-    case 'mtg':
-      return 'mtg_cards.db';
-    case 'pokemon':
-      return 'pokemon_cards.db';
-    case 'yugioh':
-      return 'yugioh_cards.db';
-    default:
-      return 'lorcana_cards.db';
-  }
+  return getTCGDatabaseFile(tcg);
 }
 
 export async function getDatabase(tcg: TCGId = 'lorcana'): Promise<SQLite.SQLiteDatabase> {
