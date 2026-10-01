@@ -588,7 +588,8 @@ export async function syncCardsFromApi(
 ): Promise<number> {
   console.log(`[Sync] Starting API sync for TCG=${tcg}...`);
   if (tcg === 'onepiece') return syncOnePiece(db, onProgress);
-  return syncLorcana(db, onProgress);
+  if (tcg === 'lorcana') return syncLorcana(db, onProgress);
+  throw new Error(`Catalog sync for ${tcg} is not connected yet. The game workspace is available, but it will not use Lorcana data as a fallback.`);
 }
 
 export async function safeQuery<T>(
