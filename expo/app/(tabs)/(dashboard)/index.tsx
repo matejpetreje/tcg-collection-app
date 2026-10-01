@@ -16,6 +16,7 @@ import StatCard from '@/components/StatCard';
 import { getSetNumber, getSetSortOrder } from '@/constants/sets';
 import { TCGS, type TCGId } from '@/constants/tcgs';
 import { useTCG } from '@/providers/TCGProvider';
+import { getTCGPresentation } from '@/tcg/presentation';
 import CardImage from '@/components/CardImage';
 import type { SetProgress, PurchasedStarterDeck } from '@/types/database';
 
@@ -77,6 +78,7 @@ function getPriceSymbol(source: PriceSource): string {
 export default function DashboardScreen() {
   const { db, isReady, hasCatalog, isSyncing, syncProgress } = useDatabase();
   const { tcg: currentTCG } = useTCG();
+  const presentation = currentTCG ? getTCGPresentation(currentTCG) : null;
   const router = useRouter();
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState<boolean>(false);
@@ -247,7 +249,7 @@ export default function DashboardScreen() {
         'SELECT * FROM purchased_starter_decks ORDER BY purchased_at DESC'
       );
     },
-    enabled: isReady && !!db,
+    enabled: isReady && !!db && presentation?.showStarterDecks === true,
   });
 
   const { data: topValueCardsRaw } = useQuery({
@@ -621,7 +623,7 @@ export default function DashboardScreen() {
   };
 
   const renderGameStats = (sectionIdx: number) => {
-    if (!gs || gs.total === 0) return null;
+    if (!isLorcana || !gs || gs.total === 0) return null;
     return (
       <TouchableOpacity key="game_stats" style={[styles.section, reorderMode && styles.sectionReorder]} onPress={() => router.push('/game-history')} activeOpacity={0.7}>
         <View style={styles.sectionHeaderRow}>
@@ -687,7 +689,7 @@ export default function DashboardScreen() {
             );
           })}
         </View>
-        {(dualColorInkDist?.length ?? 0) > 0 && (
+        {(isLorcana || isOnePiece) && (dualColorInkDist?.length ?? 0) > 0 && (
           <>
             <TouchableOpacity
               style={styles.dualToggle}
@@ -791,7 +793,7 @@ export default function DashboardScreen() {
   };
 
   const renderPurchasedDecks = (sectionIdx: number) => {
-    if ((purchasedDecks?.length ?? 0) === 0) return null;
+    if (presentation?.showStarterDecks !== true || (purchasedDecks?.length ?? 0) === 0) return null;
     return (
       <View key="purchased_decks" style={[styles.section, reorderMode && styles.sectionReorder]}>
         <View style={styles.sectionHeaderRow}>
@@ -963,18 +965,22 @@ export default function DashboardScreen() {
       </View>
 
       <View style={styles.quickActions}>
-        <TouchableOpacity style={styles.quickBtn} onPress={() => router.push('/log-game')}>
-          <View style={[styles.quickIcon, { backgroundColor: Colors.success + '20' }]}>
-            <Plus size={18} color={Colors.success} />
-          </View>
-          <Text style={styles.quickText}>Log Game</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.quickBtn} onPress={() => router.push('/game-history')}>
-          <View style={[styles.quickIcon, { backgroundColor: Colors.warning + '20' }]}>
-            <History size={18} color={Colors.warning} />
-          </View>
-          <Text style={styles.quickText}>History</Text>
-        </TouchableOpacity>
+        {isLorcana && (
+          <>
+            <TouchableOpacity style={styles.quickBtn} onPress={() => router.push('/log-game')}>
+              <View style={[styles.quickIcon, { backgroundColor: Colors.success + '20' }]}>
+                <Plus size={18} color={Colors.success} />
+              </View>
+              <Text style={styles.quickText}>Log Game</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.quickBtn} onPress={() => router.push('/game-history')}>
+              <View style={[styles.quickIcon, { backgroundColor: Colors.warning + '20' }]}>
+                <History size={18} color={Colors.warning} />
+              </View>
+              <Text style={styles.quickText}>History</Text>
+            </TouchableOpacity>
+          </>
+        )}
         <TouchableOpacity
           style={[styles.quickBtn, reorderMode && { borderColor: Colors.primary, backgroundColor: Colors.primary + '12' }]}
           onPress={() => {
