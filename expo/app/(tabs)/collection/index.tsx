@@ -408,8 +408,10 @@ export default function CollectionScreen() {
             <Text style={styles.gridMeta} numberOfLines={1}>
               {item.set_code ?? ''}{item.card_number ? ` · #${item.card_number}` : ''}
             </Text>
-            {showPrices && item.market_price != null ? (
-              <Text style={styles.gridPrice}>${item.market_price.toFixed(2)}</Text>
+            {showPrices && (isYugioh ? item.inventory_price : item.market_price) != null ? (
+              <Text style={styles.gridPrice}>
+                ${(isYugioh ? item.inventory_price : item.market_price)!.toFixed(2)}
+              </Text>
             ) : null}
             {item.qty <= 0 ? (
               <TouchableOpacity
@@ -451,7 +453,7 @@ export default function CollectionScreen() {
         ) : null}
       </TouchableOpacity>
     );
-  }, [gridCardWidth, router, showPrices, updateClassicQty, viewMode]);
+  }, [gridCardWidth, isYugioh, router, showPrices, updateClassicQty, viewMode]);
 
   const keyExtractor = useCallback((item: CardWithDetails) => item.id.toString(), []);
 
