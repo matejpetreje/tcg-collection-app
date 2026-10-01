@@ -518,6 +518,12 @@ export default function DashboardScreen() {
           'SELECT card_id, set_code, qty FROM card_printing_collection WHERE qty > 0'
         );
 
+        const ygoSetPrefix = (setCode: string): string => {
+          const trimmed = setCode.trim().toUpperCase();
+          const match = trimmed.match(/^([A-Z0-9]+)/);
+          return match?.[1] ?? trimmed;
+        };
+
         const totals = new Map<string, { set_name: string; cardIds: Set<number> }>();
         for (const row of rows) {
           try {
@@ -525,8 +531,9 @@ export default function DashboardScreen() {
               printings?: Array<{ set_name?: string; set_code?: string }>;
             };
             for (const printing of data.printings ?? []) {
-              const code = printing.set_code?.trim();
-              if (!code) continue;
+              const rawCode = printing.set_code?.trim();
+              if (!rawCode) continue;
+              const code = ygoSetPrefix(rawCode);
               const existing = totals.get(code) ?? {
                 set_name: printing.set_name?.trim() || code,
                 cardIds: new Set<number>(),
@@ -542,9 +549,10 @@ export default function DashboardScreen() {
 
         const ownedBySet = new Map<string, Set<number>>();
         for (const row of ownedPrints) {
-          const set = ownedBySet.get(row.set_code) ?? new Set<number>();
+          const code = ygoSetPrefix(row.set_code);
+          const set = ownedBySet.get(code) ?? new Set<number>();
           set.add(row.card_id);
-          ownedBySet.set(row.set_code, set);
+          ownedBySet.set(code, set);
         }
 
         return Array.from(totals.entries())
