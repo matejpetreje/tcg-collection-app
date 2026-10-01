@@ -126,8 +126,8 @@ export default function DeckDetailScreen() {
   });
 
   const invalidate = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ['deck-cards', deckIdNum] });
-    void queryClient.invalidateQueries({ queryKey: ['deck-stats', deckIdNum] });
+    void queryClient.invalidateQueries({ queryKey: ['deck-cards', tcg, deckIdNum] });
+    void queryClient.invalidateQueries({ queryKey: ['deck-stats', tcg, deckIdNum] });
     void queryClient.invalidateQueries({ queryKey: ['decks'] });
   }, [queryClient, deckIdNum]);
 
@@ -139,7 +139,7 @@ export default function DeckDetailScreen() {
     },
     onSuccess: () => {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      void queryClient.invalidateQueries({ queryKey: ['deck', deckIdNum] });
+      void queryClient.invalidateQueries({ queryKey: ['deck', tcg, deckIdNum] });
       void queryClient.invalidateQueries({ queryKey: ['decks'] });
     },
   });
