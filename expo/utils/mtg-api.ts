@@ -95,7 +95,7 @@ interface ScryfallList<T> {
 const SEARCH_URL =
   'https://api.scryfall.com/cards/search?q=game%3Apaper&unique=prints&order=name&dir=asc';
 
-const REQUEST_DELAY_MS = 125;
+const REQUEST_DELAY_MS = 150;
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
