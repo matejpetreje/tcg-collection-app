@@ -85,9 +85,12 @@ export default function CollectionScreen() {
   }, []));
 
   const buildQuery = useCallback((mode: 'list' | 'count' | 'totalCopies') => {
+    const baseOwnedExpr = `COALESCE(uc.qty, 0) + COALESCE(uc.qty_foil, 0) + COALESCE(uc.qty_enchanted, 0) + COALESCE(uc.qty_epic, 0) + COALESCE(uc.qty_promo, 0) + COALESCE(uc.qty_iconic, 0) + COALESCE(uc.qty_play, 0)`;
+    const ownedExpr = isYugioh ? `${baseOwnedExpr} + COALESCE(pc.print_qty, 0)` : baseOwnedExpr;
+
     let sql: string;
     if (mode === 'totalCopies') {
-      sql = `SELECT COALESCE(SUM(COALESCE(uc.qty, 0) + COALESCE(uc.qty_foil, 0) + COALESCE(uc.qty_enchanted, 0) + COALESCE(uc.qty_epic, 0) + COALESCE(uc.qty_promo, 0) + COALESCE(uc.qty_iconic, 0) + COALESCE(uc.qty_play, 0)), 0) as total_copies`;
+      sql = `SELECT COALESCE(SUM(${ownedExpr}), 0) as total_copies`;
     } else if (mode === 'count') {
       sql = 'SELECT COUNT(DISTINCT c.card_number) as count';
     } else {
@@ -98,13 +101,17 @@ export default function CollectionScreen() {
                 COALESCE(uc.qty_epic, 0) as qty_epic, COALESCE(uc.qty_promo, 0) as qty_promo,
                 COALESCE(uc.qty_iconic, 0) as qty_iconic, COALESCE(uc.qty_play, 0) as qty_play,
                 i.image_url, i.thumbnail_url, s.name as set_name, s.release_date,
-                COALESCE(uc.qty, 0) + COALESCE(uc.qty_foil, 0) + COALESCE(uc.qty_enchanted, 0)
-                + COALESCE(uc.qty_epic, 0) + COALESCE(uc.qty_promo, 0)
-                + COALESCE(uc.qty_iconic, 0) + COALESCE(uc.qty_play, 0) as total_owned`;
+                ${ownedExpr} as total_owned`;
     }
 
     sql += ` FROM cards c
              LEFT JOIN user_collection uc ON uc.card_id = c.id
+             LEFT JOIN (
+               SELECT card_id, SUM(qty) as print_qty
+               FROM card_printing_collection
+               WHERE qty > 0
+               GROUP BY card_id
+             ) pc ON pc.card_id = c.id
              LEFT JOIN images i ON i.card_id = c.id
              LEFT JOIN sets s ON s.set_code = c.set_code
              WHERE 1=1`;
@@ -194,10 +201,10 @@ export default function CollectionScreen() {
       }
     }
     if (filters.onlyOwned) {
-      sql += ` AND (COALESCE(uc.qty, 0) + COALESCE(uc.qty_foil, 0) + COALESCE(uc.qty_enchanted, 0) + COALESCE(uc.qty_epic, 0) + COALESCE(uc.qty_promo, 0) + COALESCE(uc.qty_iconic, 0) + COALESCE(uc.qty_play, 0)) > 0`;
+      sql += ` AND (${ownedExpr}) > 0`;
     }
     if (filters.onlyMissing) {
-      sql += ` AND (uc.card_id IS NULL OR (COALESCE(uc.qty, 0) + COALESCE(uc.qty_foil, 0) + COALESCE(uc.qty_enchanted, 0) + COALESCE(uc.qty_epic, 0) + COALESCE(uc.qty_promo, 0) + COALESCE(uc.qty_iconic, 0) + COALESCE(uc.qty_play, 0)) = 0)`;
+      sql += ` AND (${ownedExpr}) = 0`;
     }
 
     if (mode === 'list') {
@@ -330,7 +337,7 @@ export default function CollectionScreen() {
   }, [handleLoadMore]);
 
   const renderCard = useCallback(({ item }: { item: CardWithDetails }) => (
-    <CardListItem card={item} showQuickAdd={!editLocked} />
+    <CardListItem card={item} showQuickAdd={!editLocked && !isYugioh} />
   ), [editLocked]);
 
   const updateClassicQty = useCallback(async (card: CardWithDetails, delta: 1 | -1) => {
@@ -417,7 +424,20 @@ export default function CollectionScreen() {
                 ${(isYugioh ? item.inventory_price : item.market_price)!.toFixed(2)}
               </Text>
             ) : null}
-            {item.qty <= 0 ? (
+            {isYugioh ? (
+              <TouchableOpacity
+                style={styles.addCollectionBtn}
+                onPress={(event) => {
+                  event.stopPropagation();
+                  router.push(`/card/${item.id}`);
+                }}
+              >
+                <Plus size={14} color={Colors.background} />
+                <Text style={styles.addCollectionBtnText}>
+                  {(item.total_owned ?? 0) > 0 ? `Prints: ${item.total_owned}` : 'Choose Printing'}
+                </Text>
+              </TouchableOpacity>
+            ) : item.qty <= 0 ? (
               <TouchableOpacity
                 style={styles.addCollectionBtn}
                 onPress={(event) => {
