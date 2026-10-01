@@ -3,8 +3,9 @@ import {
   View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Modal, ScrollView, useWindowDimensions,
 } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
-import { Search, SlidersHorizontal, X, Check, Library, Camera, Lock, Unlock, List, Grid3X3, Minus, Plus } from 'lucide-react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Search, SlidersHorizontal, X, Check, Library, Camera, Lock, Unlock, List, Grid3X3, LayoutGrid, Minus, Plus, Settings2 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useDatabase } from '@/providers/DatabaseProvider';
 import { useTCG } from '@/providers/TCGProvider';
@@ -16,6 +17,9 @@ import EmptyState from '@/components/EmptyState';
 import type { CardWithDetails, CollectionFilters } from '@/types/database';
 
 const PAGE_SIZE = 40;
+const COLLECTION_VIEW_KEY = 'collection_view_mode';
+const COLLECTION_COLUMNS_KEY = 'collection_cards_per_row';
+type CollectionView = 'grid-minimal' | 'grid-detailed' | 'list';
 
 const INK_ORDER = ['Amber', 'Amethyst', 'Emerald', 'Ruby', 'Sapphire', 'Steel'];
 const RARITY_ORDER = [
@@ -58,8 +62,19 @@ export default function CollectionScreen() {
   const [page, setPage] = useState<number>(0);
   const [showFilters, setShowFilters] = useState<boolean>(false);
   const [editLocked, setEditLocked] = useState<boolean>(true);
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
-  const [gridSize, setGridSize] = useState<'small' | 'medium' | 'large'>('medium');
+  const [viewMode, setViewMode] = useState<CollectionView>('grid-detailed');
+  const [cardsPerRow, setCardsPerRow] = useState<string>('auto');
+
+  useFocusEffect(useCallback(() => {
+    void (async () => {
+      const [savedView, savedColumns] = await Promise.all([
+        AsyncStorage.getItem(COLLECTION_VIEW_KEY),
+        AsyncStorage.getItem(COLLECTION_COLUMNS_KEY),
+      ]);
+      if (savedView === 'grid-minimal' || savedView === 'grid-detailed' || savedView === 'list') setViewMode(savedView);
+      if (savedColumns) setCardsPerRow(savedColumns);
+    })();
+  }, []));
 
   const buildQuery = useCallback((mode: 'list' | 'count' | 'totalCopies') => {
     let sql: string;
@@ -307,72 +322,90 @@ export default function CollectionScreen() {
     }
   }, [db, queryClient]);
 
-  const gridCardWidth = useMemo(() => {
-    const target = gridSize === 'small' ? 135 : gridSize === 'large' ? 230 : 180;
-    const available = Math.max(windowWidth - 32, target);
-    const columns = Math.max(1, Math.floor((available + 12) / (target + 12)));
-    return Math.floor((available - (columns - 1) * 12) / columns);
-  }, [gridSize, windowWidth]);
+  const isGrid = viewMode !== 'list';
 
   const gridColumns = useMemo(() => {
-    const available = Math.max(windowWidth - 32, gridCardWidth);
-    return Math.max(1, Math.floor((available + 12) / (gridCardWidth + 12)));
-  }, [windowWidth, gridCardWidth]);
+    if (!isGrid) return 1;
+    if (cardsPerRow !== 'auto') {
+      const requested = Number(cardsPerRow);
+      if (Number.isFinite(requested) && requested > 0) return requested;
+    }
+    const target = viewMode === 'grid-minimal' ? 145 : 180;
+    const available = Math.max(windowWidth - 32, target);
+    return Math.max(1, Math.floor((available + 12) / (target + 12)));
+  }, [cardsPerRow, isGrid, viewMode, windowWidth]);
+
+  const gridCardWidth = useMemo(() => {
+    const gap = 12;
+    const available = Math.max(windowWidth - 32, 120);
+    return Math.max(70, Math.floor((available - (gridColumns - 1) * gap) / gridColumns));
+  }, [gridColumns, windowWidth]);
 
   const renderGridCard = useCallback(({ item }: { item: CardWithDetails }) => {
     const imageHeight = Math.round(gridCardWidth * 1.4);
+    const minimal = viewMode === 'grid-minimal';
     return (
       <TouchableOpacity
-        style={[styles.gridCard, { width: gridCardWidth }]}
+        style={[styles.gridCard, minimal && styles.gridCardMinimal, { width: gridCardWidth }]}
         onPress={() => router.push(`/card/${item.id}`)}
         activeOpacity={0.8}
       >
-        <CardImage
-          cardId={item.id}
-          imageUrl={item.image_url}
-          thumbnailUrl={item.thumbnail_url}
-          size="large"
-          style={{ width: gridCardWidth, height: imageHeight }}
-        />
-        <View style={styles.gridInfo}>
-          <Text style={styles.gridName} numberOfLines={1}>{item.name}</Text>
-          <Text style={styles.gridMeta} numberOfLines={1}>
-            {item.set_code ?? ''}{item.card_number ? ` · #${item.card_number}` : ''}
-          </Text>
-          {!editLocked ? (
-            <View style={styles.gridQtyRow}>
-              <TouchableOpacity
-                style={[styles.gridQtyBtn, item.qty <= 0 && styles.gridQtyBtnDisabled]}
-                onPress={(event) => {
-                  event.stopPropagation();
-                  void updateClassicQty(item, -1);
-                }}
-                disabled={item.qty <= 0}
-              >
-                <Minus size={14} color={item.qty <= 0 ? Colors.textMuted : Colors.text} />
-              </TouchableOpacity>
-              <View style={styles.gridQtyValue}>
-                <Text style={styles.gridQtyText}>{item.qty}</Text>
-              </View>
-              <TouchableOpacity
-                style={styles.gridQtyBtn}
-                onPress={(event) => {
-                  event.stopPropagation();
-                  void updateClassicQty(item, 1);
-                }}
-              >
-                <Plus size={14} color={Colors.primary} />
-              </TouchableOpacity>
-            </View>
-          ) : (item.total_owned ?? 0) > 0 ? (
-            <View style={styles.gridOwnedBadge}>
-              <Text style={styles.gridOwnedText}>{item.total_owned}</Text>
+        <View>
+          <CardImage
+            cardId={item.id}
+            imageUrl={item.image_url}
+            thumbnailUrl={item.thumbnail_url}
+            size="large"
+            style={{ width: gridCardWidth, height: imageHeight }}
+          />
+          {minimal && (item.total_owned ?? 0) > 0 ? (
+            <View style={styles.gridOverlayBadge}>
+              <Text style={styles.gridOverlayBadgeText}>{item.total_owned}</Text>
             </View>
           ) : null}
         </View>
+
+        {!minimal ? (
+          <View style={styles.gridInfo}>
+            <Text style={styles.gridName} numberOfLines={1}>{item.name}</Text>
+            <Text style={styles.gridMeta} numberOfLines={1}>
+              {item.set_code ?? ''}{item.card_number ? ` · #${item.card_number}` : ''}
+            </Text>
+            {!editLocked ? (
+              <View style={styles.gridQtyRow}>
+                <TouchableOpacity
+                  style={[styles.gridQtyBtn, item.qty <= 0 && styles.gridQtyBtnDisabled]}
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    void updateClassicQty(item, -1);
+                  }}
+                  disabled={item.qty <= 0}
+                >
+                  <Minus size={14} color={item.qty <= 0 ? Colors.textMuted : Colors.text} />
+                </TouchableOpacity>
+                <View style={styles.gridQtyValue}>
+                  <Text style={styles.gridQtyText}>{item.qty}</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.gridQtyBtn}
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    void updateClassicQty(item, 1);
+                  }}
+                >
+                  <Plus size={14} color={Colors.primary} />
+                </TouchableOpacity>
+              </View>
+            ) : (item.total_owned ?? 0) > 0 ? (
+              <View style={styles.gridOwnedBadge}>
+                <Text style={styles.gridOwnedText}>{item.total_owned}</Text>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
       </TouchableOpacity>
     );
-  }, [editLocked, gridCardWidth, router, updateClassicQty]);
+  }, [editLocked, gridCardWidth, router, updateClassicQty, viewMode]);
 
   const keyExtractor = useCallback((item: CardWithDetails) => item.id.toString(), []);
 
@@ -472,46 +505,42 @@ export default function CollectionScreen() {
       <View style={styles.viewToolbar}>
         <View style={styles.viewSwitch}>
           <TouchableOpacity
+            style={[styles.viewBtn, viewMode === 'grid-minimal' && styles.viewBtnActive]}
+            onPress={() => setViewMode('grid-minimal')}
+          >
+            <LayoutGrid size={15} color={viewMode === 'grid-minimal' ? Colors.primary : Colors.textMuted} />
+            <Text style={[styles.viewBtnText, viewMode === 'grid-minimal' && styles.viewBtnTextActive]}>Minimal</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.viewBtn, viewMode === 'grid-detailed' && styles.viewBtnActive]}
+            onPress={() => setViewMode('grid-detailed')}
+          >
+            <Grid3X3 size={15} color={viewMode === 'grid-detailed' ? Colors.primary : Colors.textMuted} />
+            <Text style={[styles.viewBtnText, viewMode === 'grid-detailed' && styles.viewBtnTextActive]}>Detailed</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={[styles.viewBtn, viewMode === 'list' && styles.viewBtnActive]}
             onPress={() => setViewMode('list')}
           >
             <List size={15} color={viewMode === 'list' ? Colors.primary : Colors.textMuted} />
             <Text style={[styles.viewBtnText, viewMode === 'list' && styles.viewBtnTextActive]}>List</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.viewBtn, viewMode === 'grid' && styles.viewBtnActive]}
-            onPress={() => setViewMode('grid')}
-          >
-            <Grid3X3 size={15} color={viewMode === 'grid' ? Colors.primary : Colors.textMuted} />
-            <Text style={[styles.viewBtnText, viewMode === 'grid' && styles.viewBtnTextActive]}>Grid</Text>
-          </TouchableOpacity>
         </View>
-        {viewMode === 'grid' ? (
-          <View style={styles.sizeSwitch}>
-            {(['small', 'medium', 'large'] as const).map((size) => (
-              <TouchableOpacity
-                key={size}
-                style={[styles.sizeBtn, gridSize === size && styles.sizeBtnActive]}
-                onPress={() => setGridSize(size)}
-              >
-                <Text style={[styles.sizeBtnText, gridSize === size && styles.sizeBtnTextActive]}>
-                  {size === 'small' ? 'S' : size === 'medium' ? 'M' : 'L'}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        ) : null}
+        <TouchableOpacity style={styles.preferencesBtn} onPress={() => router.push('/preferences')}>
+          <Settings2 size={16} color={Colors.primary} />
+          <Text style={styles.preferencesBtnText}>{isGrid ? (cardsPerRow === 'auto' ? 'Auto' : `${cardsPerRow}/row`) : 'Preferences'}</Text>
+        </TouchableOpacity>
       </View>
 
       <FlatList
-        key={viewMode === 'grid' ? `grid-${gridColumns}` : 'list'}
+        key={isGrid ? `grid-${gridColumns}-${viewMode}` : 'list'}
         data={cards}
-        renderItem={viewMode === 'grid' ? renderGridCard : renderCard}
+        renderItem={isGrid ? renderGridCard : renderCard}
         keyExtractor={keyExtractor}
-        numColumns={viewMode === 'grid' ? gridColumns : 1}
-        contentContainerStyle={viewMode === 'grid' ? styles.gridList : styles.list}
-        columnWrapperStyle={viewMode === 'grid' && gridColumns > 1 ? styles.gridRow : undefined}
-        ItemSeparatorComponent={viewMode === 'list' ? () => <View style={{ height: 8 }} /> : undefined}
+        numColumns={isGrid ? gridColumns : 1}
+        contentContainerStyle={isGrid ? styles.gridList : styles.list}
+        columnWrapperStyle={isGrid && gridColumns > 1 ? styles.gridRow : undefined}
+        ItemSeparatorComponent={!isGrid ? () => <View style={{ height: 8 }} /> : undefined}
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.5}
         showsVerticalScrollIndicator={false}
@@ -846,6 +875,22 @@ const styles = StyleSheet.create({
   viewBtnTextActive: {
     color: Colors.primary,
   },
+  preferencesBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    height: 32,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: Colors.primary + '12',
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
+  },
+  preferencesBtnText: {
+    fontSize: 11,
+    color: Colors.primary,
+    fontWeight: '700' as const,
+  },
   sizeSwitch: {
     flexDirection: 'row',
     gap: 4,
@@ -891,6 +936,29 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.surfaceBorder,
     marginBottom: 12,
+  },
+  gridCardMinimal: {
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+  },
+  gridOverlayBadge: {
+    position: 'absolute',
+    right: 6,
+    top: 6,
+    minWidth: 24,
+    height: 24,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primary,
+    borderWidth: 2,
+    borderColor: Colors.background,
+  },
+  gridOverlayBadgeText: {
+    color: Colors.background,
+    fontSize: 11,
+    fontWeight: '800' as const,
   },
   gridInfo: {
     padding: 8,
