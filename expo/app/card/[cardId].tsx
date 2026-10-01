@@ -1,10 +1,10 @@
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Linking,
+  View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Linking, Modal,
 } from 'react-native';
 import { useLocalSearchParams, Stack, useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Heart, HeartOff, Layers, Tag, ChevronDown, ChevronUp, Droplets, DropletOff, MoreHorizontal, ExternalLink, TrendingUp, TrendingDown, BarChart3, DollarSign, Sparkles } from 'lucide-react-native';
+import { Heart, HeartOff, Layers, Tag, ChevronDown, ChevronUp, Droplets, DropletOff, MoreHorizontal, ExternalLink, TrendingUp, TrendingDown, BarChart3, DollarSign, Sparkles, ChevronRight, X } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { getCardFoundation } from '@/constants/tcg-card-foundations';
@@ -17,7 +17,7 @@ import { fetchAndCacheDotggPrice, type DotggPriceData } from '@/utils/dotgg';
 import CardImage from '@/components/CardImage';
 import QuantityControl from '@/components/QuantityControl';
 import InkBadge from '@/components/InkBadge';
-import type { CardWithDetails, CardAbility, CardSubtype, WishlistItem, Deck } from '@/types/database';
+import type { CardWithDetails, CardAbility, CardSubtype, WishlistItem, Deck, CardPrintingCollection } from '@/types/database';
 
 export default function CardDetailScreen() {
   const { cardId } = useLocalSearchParams<{ cardId: string }>();
@@ -31,6 +31,12 @@ export default function CardDetailScreen() {
   const [noteText, setNoteText] = useState<string>('');
   const [showDeckPicker, setShowDeckPicker] = useState<boolean>(false);
   const [showMoreTypes, setShowMoreTypes] = useState<boolean>(false);
+  const [selectedYugiohPrinting, setSelectedYugiohPrinting] = useState<{
+    set_name: string;
+    set_code: string;
+    rarity: string;
+    price: string | null;
+  } | null>(null);
 
   const cardIdNum = parseInt(cardId ?? '0', 10);
 
@@ -104,6 +110,19 @@ export default function CardDetailScreen() {
     enabled: !!db && !!card?.card_number && tcg !== 'yugioh',
   });
 
+  const { data: printingCollection } = useQuery({
+    queryKey: ['printing-collection', tcg, cardIdNum, !!db],
+    queryFn: async () => {
+      if (!db || tcg !== 'yugioh') return [];
+      return safeQuery<CardPrintingCollection>(
+        db,
+        'SELECT * FROM card_printing_collection WHERE card_id = ? AND qty > 0 ORDER BY set_name, set_code',
+        [cardIdNum]
+      );
+    },
+    enabled: !!db && cardIdNum > 0 && tcg === 'yugioh',
+  });
+
   const { data: wishlistItem } = useQuery({
     queryKey: ['wishlist-item', tcg, cardIdNum, !!db],
     queryFn: async () => {
@@ -171,6 +190,39 @@ export default function CardDetailScreen() {
     },
     onSuccess: () => {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      invalidateAll();
+    },
+  });
+
+  const updatePrintingQty = useMutation({
+    mutationFn: async ({ printing, delta }: {
+      printing: { set_name: string; set_code: string; rarity: string; price: string | null };
+      delta: number;
+    }) => {
+      if (!db || tcg !== 'yugioh') return;
+      const printingKey = printing.set_code;
+      await safeRun(
+        db,
+        `INSERT INTO card_printing_collection
+          (card_id, printing_key, set_code, set_name, rarity, qty, updated_at)
+         VALUES (?, ?, ?, ?, ?, MAX(0, ?), datetime('now'))
+         ON CONFLICT(card_id, printing_key) DO UPDATE SET
+           set_code = excluded.set_code,
+           set_name = excluded.set_name,
+           rarity = excluded.rarity,
+           qty = MAX(0, card_printing_collection.qty + ?),
+           updated_at = datetime('now')`,
+        [cardIdNum, printingKey, printing.set_code, printing.set_name, printing.rarity || null, Math.max(0, delta), delta]
+      );
+      await safeRun(
+        db,
+        'DELETE FROM card_printing_collection WHERE card_id = ? AND printing_key = ? AND qty <= 0',
+        [cardIdNum, printingKey]
+      );
+    },
+    onSuccess: () => {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      void queryClient.invalidateQueries({ queryKey: ['printing-collection', tcg, cardIdNum] });
       invalidateAll();
     },
   });
@@ -272,6 +324,14 @@ export default function CardDetailScreen() {
       // Invalid legacy game_data should never block the card detail.
     }
   }
+
+  const yugiohPrintingQty = new Map<string, number>(
+    (printingCollection ?? []).map(row => [row.printing_key, row.qty])
+  );
+  const yugiohTotalOwned = (printingCollection ?? []).reduce((sum, row) => sum + row.qty, 0);
+  const selectedYugiohQty = selectedYugiohPrinting
+    ? (yugiohPrintingQty.get(selectedYugiohPrinting.set_code) ?? 0)
+    : 0;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -396,16 +456,34 @@ export default function CardDetailScreen() {
             YGOPRODeck printings for this passcode. Rarity belongs to each printing, not to the base card.
           </Text>
           <View style={styles.ygoPrintingList}>
-            {yugiohPrintings.map((printing, index) => (
-              <View key={`${printing.set_code}-${index}`} style={styles.ygoPrintingRow}>
-                <View style={styles.ygoPrintingInfo}>
-                  <Text style={styles.ygoPrintingSet} numberOfLines={1}>{printing.set_name}</Text>
-                  <Text style={styles.ygoPrintingCode}>{printing.set_code}</Text>
-                </View>
-                <Text style={styles.ygoPrintingRarity}>{printing.rarity || '—'}</Text>
-                {printing.price ? <Text style={styles.ygoPrintingPrice}>${printing.price}</Text> : null}
-              </View>
-            ))}
+            {yugiohPrintings.map((printing, index) => {
+              const owned = yugiohPrintingQty.get(printing.set_code) ?? 0;
+              return (
+                <TouchableOpacity
+                  key={`${printing.set_code}-${index}`}
+                  style={[styles.ygoPrintingRow, owned > 0 && styles.ygoPrintingRowOwned]}
+                  onPress={() => setSelectedYugiohPrinting(printing)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.ygoPrintingInfo}>
+                    <Text style={styles.ygoPrintingSet} numberOfLines={1}>{printing.set_name}</Text>
+                    <Text style={styles.ygoPrintingCode}>{printing.set_code}</Text>
+                  </View>
+                  <View style={styles.ygoPrintingRight}>
+                    <Text style={styles.ygoPrintingRarity}>{printing.rarity || '—'}</Text>
+                    <View style={styles.ygoPrintingMetaRow}>
+                      {printing.price ? <Text style={styles.ygoPrintingPrice}>${printing.price}</Text> : null}
+                      {owned > 0 ? (
+                        <View style={styles.ygoOwnedBadge}>
+                          <Text style={styles.ygoOwnedBadgeText}>Owned {owned}</Text>
+                        </View>
+                      ) : null}
+                      <ChevronRight size={16} color={Colors.textMuted} />
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
           </View>
           {yugiohArtworks.length > 1 && (
             <>
@@ -501,6 +579,14 @@ export default function CardDetailScreen() {
               </View>
             )}
           </>
+        ) : tcg === 'yugioh' ? (
+          <View style={styles.ygoCollectionSummary}>
+            <Text style={styles.ygoCollectionTotal}>{yugiohTotalOwned}</Text>
+            <Text style={styles.ygoCollectionLabel}>owned printing copies</Text>
+            <Text style={styles.ygoCollectionHint}>
+              Open a printing above to add or remove that exact version.
+            </Text>
+          </View>
         ) : (
           <View style={styles.qtyRowCenter}>
             <QuantityControl
@@ -722,6 +808,62 @@ export default function CardDetailScreen() {
           ) : null}
         </View>
       )}
+
+      <Modal
+        visible={tcg === 'yugioh' && selectedYugiohPrinting !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedYugiohPrinting(null)}
+      >
+        <View style={styles.printingModalOverlay}>
+          <View style={styles.printingModalCard}>
+            <View style={styles.printingModalHeader}>
+              <View style={styles.printingModalTitleWrap}>
+                <Text style={styles.printingModalEyebrow}>Yu-Gi-Oh! Printing</Text>
+                <Text style={styles.printingModalTitle} numberOfLines={2}>{card.name}</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.printingModalClose}
+                onPress={() => setSelectedYugiohPrinting(null)}
+              >
+                <X size={20} color={Colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {selectedYugiohPrinting && (
+              <>
+                <View style={styles.printingModalBody}>
+                  <CardImage
+                    cardId={card.id}
+                    imageUrl={card.image_url}
+                    thumbnailUrl={card.thumbnail_url}
+                    size="medium"
+                  />
+                  <View style={styles.printingModalInfo}>
+                    <Text style={styles.printingModalSet}>{selectedYugiohPrinting.set_name}</Text>
+                    <Text style={styles.printingModalCode}>{selectedYugiohPrinting.set_code}</Text>
+                    <Text style={styles.printingModalRarity}>{selectedYugiohPrinting.rarity || 'Rarity not specified'}</Text>
+                    {selectedYugiohPrinting.price ? (
+                      <Text style={styles.printingModalPrice}>TCGPlayer: ${selectedYugiohPrinting.price}</Text>
+                    ) : null}
+                  </View>
+                </View>
+
+                <View style={styles.printingModalCollection}>
+                  <Text style={styles.printingModalCollectionTitle}>Your Collection</Text>
+                  <QuantityControl
+                    label="Owned"
+                    value={selectedYugiohQty}
+                    onIncrement={() => updatePrintingQty.mutate({ printing: selectedYugiohPrinting, delta: 1 })}
+                    onDecrement={() => updatePrintingQty.mutate({ printing: selectedYugiohPrinting, delta: -1 })}
+                    color={Colors.primary}
+                  />
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       <View style={{ height: 40 }} />
     </ScrollView>
@@ -982,6 +1124,142 @@ const styles = StyleSheet.create({
     color: Colors.primaryLight,
     fontSize: 11,
     fontWeight: '700' as const,
+  },
+  ygoPrintingRowOwned: {
+    borderWidth: 1,
+    borderColor: Colors.primary + '70',
+  },
+  ygoPrintingRight: {
+    alignItems: 'flex-end',
+    gap: 4,
+    maxWidth: '48%',
+  },
+  ygoPrintingMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  ygoOwnedBadge: {
+    backgroundColor: Colors.primary + '20',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  ygoOwnedBadgeText: {
+    color: Colors.primary,
+    fontSize: 10,
+    fontWeight: '700' as const,
+  },
+  ygoCollectionSummary: {
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 4,
+  },
+  ygoCollectionTotal: {
+    color: Colors.primary,
+    fontSize: 28,
+    fontWeight: '800' as const,
+  },
+  ygoCollectionLabel: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '600' as const,
+  },
+  ygoCollectionHint: {
+    color: Colors.textMuted,
+    fontSize: 11,
+    textAlign: 'center' as const,
+    marginTop: 2,
+  },
+  printingModalOverlay: {
+    flex: 1,
+    backgroundColor: '#000000AA',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  printingModalCard: {
+    width: '100%',
+    maxWidth: 520,
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    padding: 16,
+    gap: 16,
+  },
+  printingModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  printingModalTitleWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  printingModalEyebrow: {
+    color: Colors.primary,
+    fontSize: 10,
+    fontWeight: '700' as const,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.8,
+  },
+  printingModalTitle: {
+    color: Colors.text,
+    fontSize: 18,
+    fontWeight: '700' as const,
+  },
+  printingModalClose: {
+    width: 34,
+    height: 34,
+    borderRadius: 9,
+    backgroundColor: Colors.surfaceLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  printingModalBody: {
+    flexDirection: 'row',
+    gap: 14,
+    alignItems: 'flex-start',
+  },
+  printingModalInfo: {
+    flex: 1,
+    gap: 6,
+    paddingTop: 2,
+  },
+  printingModalSet: {
+    color: Colors.text,
+    fontSize: 15,
+    fontWeight: '700' as const,
+  },
+  printingModalCode: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '600' as const,
+  },
+  printingModalRarity: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+  },
+  printingModalPrice: {
+    color: Colors.primaryLight,
+    fontSize: 13,
+    fontWeight: '700' as const,
+    marginTop: 4,
+  },
+  printingModalCollection: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.surfaceBorder,
+    paddingTop: 14,
+    alignItems: 'center',
+    gap: 12,
+  },
+  printingModalCollectionTitle: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '700' as const,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.5,
   },
   collectionSection: {
     backgroundColor: Colors.surface,
