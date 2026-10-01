@@ -18,6 +18,7 @@ const PRIORITY_COLORS: Record<number, string> = { 1: Colors.danger, 2: Colors.wa
 export default function WishlistScreen() {
   const { db, isReady, hasCatalog } = useDatabase();
   const { tcg } = useTCG();
+  const isYugioh = tcg === 'yugioh';
   const router = useRouter();
   const queryClient = useQueryClient();
   const [filterPriority, setFilterPriority] = useState<number | null>(null);
@@ -128,14 +129,20 @@ export default function WishlistScreen() {
         <View style={styles.cardActions}>
           <TouchableOpacity
             style={styles.acquireBtn}
-            onPress={() => doAcquireCard({ cardId: item.card_id, targetQty: item.target_qty })}
+            onPress={() => {
+              if (isYugioh) {
+                router.push(`/card/${item.card_id}`);
+                return;
+              }
+              doAcquireCard({ cardId: item.card_id, targetQty: item.target_qty });
+            }}
           >
             <Check size={16} color={Colors.success} />
           </TouchableOpacity>
         </View>
       </TouchableOpacity>
     );
-  }, [router, doChangePriority, doAcquireCard]);
+  }, [router, doChangePriority, doAcquireCard, isYugioh]);
 
   if (!isReady) {
     return <View style={styles.loading}><ActivityIndicator size="large" color={Colors.primary} /></View>;
