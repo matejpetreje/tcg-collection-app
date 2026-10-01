@@ -14,7 +14,8 @@ import { useDatabase } from '@/providers/DatabaseProvider';
 import { safeQueryFirst, safeQuery } from '@/utils/database';
 import StatCard from '@/components/StatCard';
 import { getSetNumber, getSetSortOrder } from '@/constants/sets';
-import { TCGS, TCG_STORAGE_KEY, type TCGId } from '@/constants/tcgs';
+import { TCGS, type TCGId } from '@/constants/tcgs';
+import { useTCG } from '@/providers/TCGProvider';
 import CardImage from '@/components/CardImage';
 import type { SetProgress, PurchasedStarterDeck } from '@/types/database';
 
@@ -75,20 +76,10 @@ function getPriceSymbol(source: PriceSource): string {
 
 export default function DashboardScreen() {
   const { db, isReady, hasCatalog, isSyncing, syncProgress } = useDatabase();
+  const { tcg: currentTCG } = useTCG();
   const router = useRouter();
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState<boolean>(false);
-  const [currentTCG, setCurrentTCG] = useState<TCGId | null>(null);
-
-  useFocusEffect(
-    useCallback(() => {
-      AsyncStorage.getItem(TCG_STORAGE_KEY)
-        .then((stored) => {
-          if (stored) setCurrentTCG(stored as TCGId);
-        })
-        .catch((e) => console.log('[Dashboard] tcg load error', e));
-    }, [])
-  );
 
   const isOnePiece = currentTCG === 'onepiece';
   const isLorcana = currentTCG === 'lorcana';
@@ -163,7 +154,7 @@ export default function DashboardScreen() {
   }, []);
 
   const { data: stats } = useQuery({
-    queryKey: ['dashboard-stats', !!db, hasCatalog],
+    queryKey: ['dashboard-stats', currentTCG, !!db, hasCatalog],
     queryFn: async () => {
       if (!db) return null;
       const totalCards = await safeQueryFirst<{ count: number }>(db, 'SELECT COUNT(*) as count FROM cards');
@@ -206,7 +197,7 @@ export default function DashboardScreen() {
   });
 
   const { data: inkDist } = useQuery({
-    queryKey: ['dashboard-ink-dist', !!db, hasCatalog],
+    queryKey: ['dashboard-ink-dist', currentTCG, !!db, hasCatalog],
     queryFn: async () => {
       if (!db) return [];
       return safeQuery<InkDistItem>(
@@ -227,7 +218,7 @@ export default function DashboardScreen() {
   });
 
   const { data: dualColorInkDist } = useQuery({
-    queryKey: ['dashboard-dual-ink-dist', !!db, hasCatalog],
+    queryKey: ['dashboard-dual-ink-dist', currentTCG, !!db, hasCatalog],
     queryFn: async () => {
       if (!db) return [];
       return safeQuery<{ combo: string; unique_count: number; total_count: number }>(
@@ -248,7 +239,7 @@ export default function DashboardScreen() {
   });
 
   const { data: purchasedDecks } = useQuery({
-    queryKey: ['dashboard-purchased-decks', !!db, hasCatalog],
+    queryKey: ['dashboard-purchased-decks', currentTCG, !!db, hasCatalog],
     queryFn: async () => {
       if (!db) return [];
       return safeQuery<PurchasedStarterDeck>(
@@ -307,7 +298,7 @@ export default function DashboardScreen() {
   }, [topValueCardsRaw, priceSource]);
 
   const { data: decksList } = useQuery({
-    queryKey: ['dashboard-decks-list', !!db, hasCatalog],
+    queryKey: ['dashboard-decks-list', currentTCG, !!db, hasCatalog],
     queryFn: async () => {
       if (!db) return [];
       return safeQuery<{ id: number; name: string; ink_profile: string | null; card_count: number }>(
@@ -424,7 +415,7 @@ export default function DashboardScreen() {
   });
 
   const { data: setProgress } = useQuery({
-    queryKey: ['dashboard-set-progress', !!db, hasCatalog],
+    queryKey: ['dashboard-set-progress', currentTCG, !!db, hasCatalog],
     queryFn: async () => {
       if (!db) return [];
       return safeQuery<SetProgress>(
