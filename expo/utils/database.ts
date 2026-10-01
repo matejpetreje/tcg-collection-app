@@ -104,6 +104,7 @@ async function migrateSchema(db: SQLite.SQLiteDatabase): Promise<void> {
 
   try { await db.execAsync('ALTER TABLE cards ADD COLUMN market_price REAL;'); } catch {}
   try { await db.execAsync('ALTER TABLE cards ADD COLUMN inventory_price REAL;'); } catch {}
+  try { await db.execAsync('ALTER TABLE cards ADD COLUMN game_data TEXT;'); } catch {}
 
   try {
     await db.execAsync(`CREATE TABLE IF NOT EXISTS purchased_starter_decks (
