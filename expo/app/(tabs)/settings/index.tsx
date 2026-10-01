@@ -11,10 +11,10 @@ import { useRouter } from 'expo-router';
 import Colors from '@/constants/colors';
 import { useDatabase } from '@/providers/DatabaseProvider';
 import { useTCG } from '@/providers/TCGProvider';
-import { TCGS as TCGS_MAP } from '@/constants/tcgs';
 import { safeQuery, safeRun, backupCardIdMapping, getSavedCardIdMapping, buildV12IdBridge, fallbackRecoverV12Ids } from '@/utils/database';
 import { RESET_USER_DATA_SQL, RESET_CATALOG_SQL } from '@/constants/schema';
-import { TCG_STORAGE_KEY, TCGS, type TCGId } from '@/constants/tcgs';
+import { TCGS } from '@/constants/tcgs';
+import { getTCG } from '@/tcg/registry';
 
 const PLAYERS_STORAGE_KEY = 'lorcana_players';
 const PRIMARY_PLAYER_KEY = 'lorcana_primary_player';
@@ -33,7 +33,7 @@ export default function SettingsScreen() {
   const [savedPlayers, setSavedPlayers] = useState<SavedPlayer[]>([]);
   const [primaryPlayer, setPrimaryPlayer] = useState<string | null>(null);
   const [showPlayerPicker, setShowPlayerPicker] = useState<boolean>(false);
-  const [selectedTcg, setSelectedTcg] = useState<TCGId | null>(null);
+  const currentGame = tcg ? getTCG(tcg) : null;
 
   useEffect(() => {
     void (async () => {
@@ -42,8 +42,6 @@ export default function SettingsScreen() {
         if (stored) setSavedPlayers(JSON.parse(stored));
         const primary = await AsyncStorage.getItem(PRIMARY_PLAYER_KEY);
         if (primary) setPrimaryPlayer(primary);
-        const tcg = await AsyncStorage.getItem(TCG_STORAGE_KEY);
-        if (tcg) setSelectedTcg(tcg as TCGId);
       } catch (e) {
         console.log('[Settings] Error loading players:', e);
       }
@@ -159,8 +157,8 @@ export default function SettingsScreen() {
       const exportTcg: string | undefined = data.tcg;
       const currentTcg = tcg ?? 'lorcana';
       if (exportTcg && exportTcg !== currentTcg) {
-        const fromName = TCGS_MAP.find(t => t.id === exportTcg)?.name ?? exportTcg;
-        const toName = TCGS_MAP.find(t => t.id === currentTcg)?.name ?? currentTcg;
+        const fromName = TCGS.find(t => t.id === exportTcg)?.name ?? exportTcg;
+        const toName = TCGS.find(t => t.id === currentTcg)?.name ?? currentTcg;
         throw new Error(`This export is for ${fromName}, but you are in the ${toName} section. Switch to ${fromName} before importing.`);
       }
       if (!exportTcg && data.version !== '1.1') {
@@ -552,31 +550,33 @@ export default function SettingsScreen() {
           <View style={styles.rowContent}>
             <Text style={styles.rowTitle}>Current TCG</Text>
             <Text style={styles.rowSubtitle}>
-              {TCGS.find(t => t.id === selectedTcg)?.name ?? 'Not selected'} — tap to switch
+              {currentGame?.name ?? 'Not selected'} — tap to switch
             </Text>
           </View>
           <ChevronRight size={16} color={Colors.textMuted} />
         </TouchableOpacity>
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Player</Text>
-        <TouchableOpacity
-          style={styles.row}
-          onPress={() => setShowPlayerPicker(true)}
-        >
-          <View style={[styles.rowIcon, { backgroundColor: Colors.primary + '20' }]}>
-            <User size={18} color={Colors.primary} />
-          </View>
-          <View style={styles.rowContent}>
-            <Text style={styles.rowTitle}>Primary Player</Text>
-            <Text style={styles.rowSubtitle}>
-              {primaryPlayer ?? 'Not set — tap to select'}
-            </Text>
-          </View>
-          <ChevronRight size={16} color={Colors.textMuted} />
-        </TouchableOpacity>
-      </View>
+      {tcg === 'lorcana' && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Player</Text>
+          <TouchableOpacity
+            style={styles.row}
+            onPress={() => setShowPlayerPicker(true)}
+          >
+            <View style={[styles.rowIcon, { backgroundColor: Colors.primary + '20' }]}>
+              <User size={18} color={Colors.primary} />
+            </View>
+            <View style={styles.rowContent}>
+              <Text style={styles.rowTitle}>Primary Player</Text>
+              <Text style={styles.rowSubtitle}>
+                {primaryPlayer ?? 'Not set — tap to select'}
+              </Text>
+            </View>
+            <ChevronRight size={16} color={Colors.textMuted} />
+          </TouchableOpacity>
+        </View>
+      )}
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Reset</Text>
@@ -611,7 +611,15 @@ export default function SettingsScreen() {
           </View>
           <View style={styles.aboutRow}>
             <Text style={styles.aboutLabel}>Data Source</Text>
-            <Text style={styles.aboutValue}>lorcana-api.com</Text>
+            <Text style={styles.aboutValue}>
+              {currentGame?.catalogSource === 'lorcana-api'
+                ? 'lorcana-api.com'
+                : currentGame?.catalogSource === 'optcgapi'
+                  ? 'optcgapi.com'
+                  : currentGame?.catalogSource === 'ygoprodeck'
+                    ? 'YGOPRODeck'
+                    : 'Not connected'}
+            </Text>
           </View>
           <View style={styles.aboutRow}>
             <Text style={styles.aboutLabel}>Last Sync</Text>
@@ -622,7 +630,7 @@ export default function SettingsScreen() {
 
       <View style={{ height: 40 }} />
 
-      <Modal visible={showPlayerPicker} transparent animationType="fade">
+      <Modal visible={tcg === 'lorcana' && showPlayerPicker} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
