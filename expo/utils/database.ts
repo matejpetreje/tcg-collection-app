@@ -8,6 +8,22 @@ import { fetchAllYugiohCards, type YugiohApiCard } from '@/utils/yugioh-api';
 import type { TCGId } from '@/constants/tcgs';
 
 const dbInstances: Record<string, SQLite.SQLiteDatabase> = {};
+const dbOpening: Record<string, Promise<SQLite.SQLiteDatabase> | undefined> = {};
+
+export async function closeAllDatabases(): Promise<void> {
+  const entries = Object.entries(dbInstances);
+  for (const [file, database] of entries) {
+    try {
+      await database.closeAsync();
+      console.log(`[DB] Closed ${file}`);
+    } catch (error) {
+      console.log(`[DB] Close skipped for ${file}:`, (error as Error).message);
+    } finally {
+      delete dbInstances[file];
+      delete dbOpening[file];
+    }
+  }
+}
 
 async function withSyncTransaction(
   db: SQLite.SQLiteDatabase,
@@ -46,11 +62,26 @@ export async function getDatabase(tcg: TCGId = 'lorcana'): Promise<SQLite.SQLite
   const file = dbFileForTCG(tcg);
   const existing = dbInstances[file];
   if (existing) return existing;
+
+  // React StrictMode / Fast Refresh can call initialization twice on web.
+  // Share the same in-flight open so expo-sqlite never creates two Access Handles
+  // for the same OPFS file.
+  const opening = dbOpening[file];
+  if (opening) return opening;
+
   console.log(`[DB] Opening database ${file}`);
-  const instance = await SQLite.openDatabaseAsync(file);
-  dbInstances[file] = instance;
-  console.log(`[DB] ${file} opened successfully`);
-  return instance;
+  const promise = SQLite.openDatabaseAsync(file)
+    .then((instance) => {
+      dbInstances[file] = instance;
+      console.log(`[DB] ${file} opened successfully`);
+      return instance;
+    })
+    .finally(() => {
+      delete dbOpening[file];
+    });
+
+  dbOpening[file] = promise;
+  return promise;
 }
 
 async function execStatements(db: SQLite.SQLiteDatabase, sql: string, label: string): Promise<void> {
