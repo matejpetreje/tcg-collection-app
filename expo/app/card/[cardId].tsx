@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Linking,
 } from 'react-native';
-import { useLocalSearchParams, Stack } from 'expo-router';
+import { useLocalSearchParams, Stack, useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Heart, HeartOff, Layers, Tag, ChevronDown, ChevronUp, Droplets, DropletOff, MoreHorizontal, ExternalLink, TrendingUp, TrendingDown, BarChart3, DollarSign, Sparkles } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
@@ -20,6 +20,7 @@ import type { CardWithDetails, CardAbility, CardSubtype, WishlistItem, Deck } fr
 export default function CardDetailScreen() {
   const { cardId } = useLocalSearchParams<{ cardId: string }>();
   const queryClient = useQueryClient();
+  const router = useRouter();
   const { db } = useDatabase();
   const { tcg } = useTCG();
   const isOnePiece = tcg === 'onepiece';
@@ -72,6 +73,32 @@ export default function CardDetailScreen() {
       return safeQuery<CardSubtype>(db, 'SELECT * FROM subtypes WHERE card_id = ?', [cardIdNum]);
     },
     enabled: !!db && cardIdNum > 0,
+  });
+
+  const { data: otherPrintings } = useQuery({
+    queryKey: ['card-printings', card?.card_number, cardIdNum, !!db],
+    queryFn: async () => {
+      if (!db || !card?.card_number) return [];
+      return safeQuery<CardWithDetails>(
+        db,
+        `SELECT c.*, COALESCE(uc.qty, 0) as qty, COALESCE(uc.qty_foil, 0) as qty_foil,
+                COALESCE(uc.qty_enchanted, 0) as qty_enchanted, COALESCE(uc.qty_epic, 0) as qty_epic,
+                COALESCE(uc.qty_promo, 0) as qty_promo, COALESCE(uc.qty_iconic, 0) as qty_iconic,
+                COALESCE(uc.qty_play, 0) as qty_play, i.image_url, i.thumbnail_url,
+                s.name as set_name, s.release_date,
+                COALESCE(uc.qty, 0) + COALESCE(uc.qty_foil, 0) + COALESCE(uc.qty_enchanted, 0)
+                + COALESCE(uc.qty_epic, 0) + COALESCE(uc.qty_promo, 0)
+                + COALESCE(uc.qty_iconic, 0) + COALESCE(uc.qty_play, 0) as total_owned
+         FROM cards c
+         LEFT JOIN user_collection uc ON uc.card_id = c.id
+         LEFT JOIN images i ON i.card_id = c.id
+         LEFT JOIN sets s ON s.set_code = c.set_code
+         WHERE c.card_number = ? AND c.id <> ?
+         ORDER BY c.id`,
+        [card.card_number, cardIdNum]
+      );
+    },
+    enabled: !!db && !!card?.card_number,
   });
 
   const { data: wishlistItem } = useQuery({
@@ -328,6 +355,33 @@ export default function CardDetailScreen() {
           <Text style={styles.setLabel}>Set</Text>
           <Text style={styles.setName}>{card.set_name} ({card.set_code})</Text>
           {card.release_date && <Text style={styles.setDate}>{card.release_date}</Text>}
+        </View>
+      )}
+
+      {(otherPrintings?.length ?? 0) > 0 && (
+        <View style={styles.printingsSection}>
+          <Text style={styles.sectionTitle}>Other Printings / Arts</Text>
+          <Text style={styles.printingsHint}>Same card, different printing or artwork.</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.printingsRow}>
+            {otherPrintings?.map(printing => (
+              <TouchableOpacity
+                key={printing.id}
+                style={styles.printingCard}
+                onPress={() => router.replace(`/card/${printing.id}`)}
+              >
+                <CardImage
+                  cardId={printing.id}
+                  imageUrl={printing.image_url}
+                  thumbnailUrl={printing.thumbnail_url}
+                  size="medium"
+                />
+                <Text style={styles.printingLabel} numberOfLines={1}>{printing.version || printing.rarity || 'Alternate'}</Text>
+                {(printing.total_owned ?? 0) > 0 && (
+                  <Text style={styles.printingOwned}>Owned: {printing.total_owned}</Text>
+                )}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
         </View>
       )}
 
@@ -790,6 +844,37 @@ const styles = StyleSheet.create({
   setDate: {
     fontSize: 12,
     color: Colors.textSecondary,
+  },
+  printingsSection: {
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    padding: 14,
+    gap: 6,
+  },
+  printingsHint: {
+    color: Colors.textMuted,
+    fontSize: 12,
+  },
+  printingsRow: {
+    gap: 12,
+    paddingTop: 8,
+    paddingBottom: 2,
+  },
+  printingCard: {
+    width: 120,
+    gap: 5,
+  },
+  printingLabel: {
+    color: Colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '600' as const,
+  },
+  printingOwned: {
+    color: Colors.primary,
+    fontSize: 10,
+    fontWeight: '700' as const,
   },
   collectionSection: {
     backgroundColor: Colors.surface,
