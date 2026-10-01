@@ -25,6 +25,34 @@ export async function closeAllDatabases(): Promise<void> {
   }
 }
 
+export async function closeDatabase(tcg: TCGId): Promise<void> {
+  const file = dbFileForTCG(tcg);
+  const opening = dbOpening[file];
+  if (opening) {
+    try {
+      await opening;
+    } catch {
+      // Failed opens have no usable handle to close.
+    }
+  }
+
+  const database = dbInstances[file];
+  if (!database) {
+    delete dbOpening[file];
+    return;
+  }
+
+  try {
+    await database.closeAsync();
+    console.log(`[DB] Closed ${file}`);
+  } catch (error) {
+    console.log(`[DB] Close skipped for ${file}:`, (error as Error).message);
+  } finally {
+    delete dbInstances[file];
+    delete dbOpening[file];
+  }
+}
+
 async function withSyncTransaction(
   db: SQLite.SQLiteDatabase,
   task: (txn: SQLite.SQLiteDatabase) => Promise<void>
