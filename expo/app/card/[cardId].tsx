@@ -330,7 +330,8 @@ export default function CardDetailScreen() {
   const yugiohPrintingQty = new Map<string, number>(
     (printingCollection ?? []).map(row => [row.printing_key, row.qty])
   );
-  const yugiohTotalOwned = (printingCollection ?? []).reduce((sum, row) => sum + row.qty, 0);
+  const yugiohPrintingTotalOwned = (printingCollection ?? []).reduce((sum, row) => sum + row.qty, 0);
+  const yugiohTotalOwned = yugiohPrintingTotalOwned + (card.qty ?? 0);
   const selectedYugiohQty = selectedYugiohPrinting
     ? (yugiohPrintingQty.get(selectedYugiohPrinting.set_code) ?? 0)
     : 0;
@@ -352,7 +353,9 @@ export default function CardDetailScreen() {
         <Text style={styles.name}>{card.name}</Text>
         {card.version && <Text style={styles.version}>{card.version}</Text>}
         {card.card_number && (
-          <Text style={styles.cardNumberText}>#{card.card_number} · {card.set_code ?? ''}</Text>
+          <Text style={styles.cardNumberText}>
+            {tcg === 'yugioh' ? `Passcode ${card.card_number}` : `#${card.card_number} · ${card.set_code ?? ''}`}
+          </Text>
         )}
       </View>
 
@@ -373,7 +376,7 @@ export default function CardDetailScreen() {
             <Text style={styles.costCircleText}>{card.cost}</Text>
           </View>
         )}
-        {card.rarity && (
+        {card.rarity && tcg !== 'yugioh' && (
           <Text style={[styles.rarityLabel, { color: Colors.rarity[card.rarity] ?? Colors.textSecondary }]}>
             {card.rarity}
           </Text>
@@ -443,7 +446,7 @@ export default function CardDetailScreen() {
         </View>
       )}
 
-      {card.set_name && (
+      {card.set_name && tcg !== 'yugioh' && (
         <View style={styles.setInfo}>
           <Text style={styles.setLabel}>Set</Text>
           <Text style={styles.setName}>{card.set_name} ({card.set_code})</Text>
@@ -588,6 +591,18 @@ export default function CardDetailScreen() {
             <Text style={styles.ygoCollectionHint}>
               Open a printing above to add or remove that exact version.
             </Text>
+            {card.qty > 0 && (
+              <View style={styles.ygoLegacyOwned}>
+                <Text style={styles.ygoLegacyOwnedText}>Unassigned legacy copies</Text>
+                <QuantityControl
+                  label="Unassigned"
+                  value={card.qty}
+                  onIncrement={() => updateQty.mutate({ field: 'qty', delta: 1 })}
+                  onDecrement={() => updateQty.mutate({ field: 'qty', delta: -1 })}
+                  color={Colors.textSecondary}
+                />
+              </View>
+            )}
           </View>
         ) : (
           <View style={styles.qtyRowCenter}>
@@ -1172,6 +1187,20 @@ const styles = StyleSheet.create({
     fontSize: 11,
     textAlign: 'center' as const,
     marginTop: 2,
+  },
+  ygoLegacyOwned: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: Colors.surfaceBorder,
+    alignItems: 'center',
+    gap: 8,
+    width: '100%',
+  },
+  ygoLegacyOwnedText: {
+    color: Colors.warning,
+    fontSize: 11,
+    fontWeight: '600' as const,
   },
   printingModalOverlay: {
     flex: 1,
