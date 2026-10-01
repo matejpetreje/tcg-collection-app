@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS mtg_printings (
   local_image_url TEXT,
   local_thumbnail_url TEXT,
   scryfall_uri TEXT,
+  updated_at TEXT,
   FOREIGN KEY (oracle_id) REFERENCES mtg_cards(oracle_id) ON DELETE CASCADE
 );
 
@@ -67,6 +68,12 @@ CREATE INDEX IF NOT EXISTS idx_mtg_printings_oracle ON mtg_printings(oracle_id);
 CREATE INDEX IF NOT EXISTS idx_mtg_printings_set ON mtg_printings(set_code);
 CREATE INDEX IF NOT EXISTS idx_mtg_printings_release ON mtg_printings(released_at);
 `);
+
+try {
+  db.exec('ALTER TABLE mtg_printings ADD COLUMN updated_at TEXT;');
+} catch {
+  // Column already exists.
+}
 
 export function setMeta(key: string, value: string): void {
   db.prepare(`
