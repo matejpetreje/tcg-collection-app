@@ -1,25 +1,4 @@
-export interface ScryfallImageUris {
-  small?: string;
-  normal?: string;
-  large?: string;
-  png?: string;
-  art_crop?: string;
-  border_crop?: string;
-}
-
-export interface ScryfallCardFace {
-  name?: string;
-  mana_cost?: string;
-  type_line?: string;
-  oracle_text?: string;
-  power?: string;
-  toughness?: string;
-  loyalty?: string;
-  defense?: string;
-  image_uris?: ScryfallImageUris;
-}
-
-export interface ScryfallPrices {
+export interface MtgPrintingPrice {
   usd?: string | null;
   usd_foil?: string | null;
   usd_etched?: string | null;
@@ -28,120 +7,104 @@ export interface ScryfallPrices {
   tix?: string | null;
 }
 
-export interface ScryfallCard {
-  id: string;
-  oracle_id?: string;
-  name: string;
-  lang?: string;
-  released_at?: string;
-  layout?: string;
-  highres_image?: boolean;
-  image_status?: string;
-  image_uris?: ScryfallImageUris;
-  card_faces?: ScryfallCardFace[];
-  mana_cost?: string;
-  cmc?: number;
-  type_line?: string;
-  oracle_text?: string;
-  power?: string;
-  toughness?: string;
-  loyalty?: string;
-  defense?: string;
-  colors?: string[];
-  color_identity?: string[];
-  keywords?: string[];
-  legalities?: Record<string, string>;
-  games?: string[];
-  reserved?: boolean;
-  foil?: boolean;
-  nonfoil?: boolean;
-  finishes?: string[];
-  oversized?: boolean;
-  promo?: boolean;
-  reprint?: boolean;
-  variation?: boolean;
-  set_id?: string;
-  set: string;
+export interface MtgCatalogPrinting {
+  scryfall_id: string;
+  set_code: string;
   set_name: string;
-  set_type?: string;
   collector_number: string;
-  digital?: boolean;
-  rarity: string;
-  artist?: string;
-  illustration_id?: string;
-  border_color?: string;
-  frame?: string;
-  frame_effects?: string[];
-  full_art?: boolean;
-  textless?: boolean;
-  booster?: boolean;
-  story_spotlight?: boolean;
-  edhrec_rank?: number;
-  penny_rank?: number;
-  prices?: ScryfallPrices;
-  related_uris?: Record<string, string>;
-  purchase_uris?: Record<string, string>;
-  scryfall_uri?: string;
+  rarity: string | null;
+  released_at: string | null;
+  artist: string | null;
+  finishes: string[];
+  promo: boolean;
+  reprint: boolean;
+  prices: MtgPrintingPrice;
+  image_url: string | null;
+  thumbnail_url: string | null;
+  scryfall_uri: string | null;
 }
 
-interface ScryfallList<T> {
-  object: 'list';
-  total_cards?: number;
-  has_more: boolean;
-  next_page?: string | null;
-  data: T[];
+export interface MtgCatalogCard {
+  oracle_id: string;
+  name: string;
+  layout: string | null;
+  mana_cost: string | null;
+  mana_value: number | null;
+  colors: string[];
+  color_identity: string[];
+  type_line: string | null;
+  oracle_text: string | null;
+  power: string | null;
+  toughness: string | null;
+  loyalty: string | null;
+  defense: string | null;
+  keywords: string[];
+  legalities: Record<string, string>;
+  reserved: boolean;
+  set_code: string | null;
+  set_name: string | null;
+  rarity: string | null;
+  released_at: string | null;
+  artist: string | null;
+  market_price: number | null;
+  foil_price: number | null;
+  image_url: string | null;
+  thumbnail_url: string | null;
+  printings: MtgCatalogPrinting[];
 }
 
-const SEARCH_URL =
-  'https://api.scryfall.com/cards/search?q=game%3Apaper&unique=prints&order=name&dir=asc';
+interface MtgCatalogPage {
+  data: MtgCatalogCard[];
+  next_cursor: number | null;
+  total: number;
+}
 
-const REQUEST_DELAY_MS = 150;
+function catalogBaseUrl(): string {
+  const configured = process.env.EXPO_PUBLIC_CATALOG_API_URL?.trim();
+  if (configured) return configured.replace(/\/$/, '');
 
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  if (typeof window !== 'undefined') return 'http://localhost:8787';
+
+  throw new Error(
+    'EXPO_PUBLIC_CATALOG_API_URL is not configured. Point it to the TCG catalog server.'
+  );
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url, {
-    headers: {
-      Accept: 'application/json;q=0.9,*/*;q=0.8',
-    },
+    headers: { Accept: 'application/json' },
   });
 
   if (!response.ok) {
     const body = await response.text().catch(() => '');
-    throw new Error(`Scryfall HTTP ${response.status}: ${body.slice(0, 240)}`);
+    throw new Error(`Catalog server HTTP ${response.status}: ${body.slice(0, 240)}`);
   }
 
   return response.json() as Promise<T>;
 }
 
-export async function fetchAllMtgPrintings(
+export async function fetchAllMtgCards(
   onProgress?: (current: number, total: number) => void
-): Promise<ScryfallCard[]> {
-  console.log('[MTG API] Fetching paper printings from Scryfall...');
+): Promise<MtgCatalogCard[]> {
+  const base = catalogBaseUrl();
+  console.log(`[MTG API] Fetching normalized catalog from ${base}...`);
 
-  const cards: ScryfallCard[] = [];
-  let nextUrl: string | null = SEARCH_URL;
+  const cards: MtgCatalogCard[] = [];
+  let cursor: number | null = 0;
   let total = 0;
-  let page = 0;
 
-  while (nextUrl) {
-    const result: ScryfallList<ScryfallCard> = await fetchJson<ScryfallList<ScryfallCard>>(nextUrl);
-    page += 1;
+  while (cursor !== null) {
+    const page: MtgCatalogPage = await fetchJson<MtgCatalogPage>(
+      `${base}/catalog/mtg/cards?cursor=${cursor}&limit=500`
+    );
 
-    if (page === 1) {
-      total = result.total_cards ?? 0;
-      console.log(`[MTG API] Scryfall reports ${total || 'unknown'} paper printings`);
-    }
+    total = page.total;
+    cards.push(...page.data);
+    onProgress?.(cards.length, total);
 
-    cards.push(...result.data);
-    onProgress?.(cards.length, total || cards.length);
-
-    nextUrl = result.has_more && result.next_page ? result.next_page : null;
-    if (nextUrl) await sleep(REQUEST_DELAY_MS);
+    cursor = page.next_cursor;
   }
 
-  console.log(`[MTG API] Received ${cards.length} paper printings`);
+  console.log(`[MTG API] Received ${cards.length} oracle cards from catalog server`);
   return cards;
 }
